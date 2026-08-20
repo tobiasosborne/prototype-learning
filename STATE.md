@@ -10,7 +10,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | P1 reference backend | done | numpy sv/dm; blind Codex oracle cross-check (tests/oracle) |
 | P2 neurons / Fig 3 | done | Fig 3 corners reproduced exactly (experiments/runs/bitcount/20260820T135930Z) |
 | P3 KW-SA + bit-count | done (discrepancy) | superposition: median KL<0.005 at sweep 9 (paper ~8); iterative baseline stalls at KL≈0.15 after 200 its (paper ≈0 by 120) — open |
-| P4 orkan + trajectories + GPU | in progress | ffi done (12q CRX 20 ms); trajectories done; cupy backends written, CUDA headers installing; orkan Backend adapter agent running |
+| P4 orkan + trajectories + GPU | done | orkan DM backend 4.1 s per noisy 11q eval (numpy 148 s); trajectories; CuPy DM + trajectories |
 | P5 Iris | in progress | agent running |
 | P6 Flappy Bird | done | perfect play (110 pipes = cap) on 20/20 held-out seeds; run 20260820T142739Z |
 | P7 ECG | in progress | agent running; encoding switched to 2·asin(√s) |

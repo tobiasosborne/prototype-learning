@@ -94,17 +94,10 @@ def dataset_superposition(
 
 def target_distribution(codes: Codes, labels: npt.ArrayLike, n_bits: int = N_BITS) -> Real:
     """``p(x) ∝ (label(x) + 1)²`` on the dataset codes, 0 elsewhere ``[PTQNN Fig 8]``."""
-    y = np.asarray(labels, dtype=np.float64)
-    merged = merge_duplicate_codes(np.asarray(codes, dtype=np.int64), np.rint(y).astype(np.int64))
-    if not np.allclose(y, np.rint(y)):  # already-merged fractional labels: keep them
-        c = np.asarray(codes, dtype=np.int64)
-        order = np.argsort(c)
-        uniq_codes, uniq_labels = c[order], y[order]
-    else:
-        uniq_codes, uniq_labels = merged.codes, merged.labels
-    w = (uniq_labels + 1.0) ** 2
+    merged = merge_duplicate_codes(codes, labels)
+    w = (merged.labels + 1.0) ** 2
     p = np.zeros(2**n_bits, dtype=np.float64)
-    p[uniq_codes] = w / w.sum()
+    p[merged.codes] = w / w.sum()
     return p
 
 

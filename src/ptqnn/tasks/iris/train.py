@@ -18,7 +18,7 @@ binary data we map their angles to per-input activation probabilities
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -144,8 +144,8 @@ def run_fig7(
     """
     c = cfg or IrisConfig()
     out: dict[HiddenKind, IrisResult] = {}
-    for hidden in ("classic", "prototype"):
-        kind: HiddenKind = hidden  # type: ignore[assignment]
+    kinds: tuple[HiddenKind, ...] = ("classic", "prototype")
+    for kind in kinds:
         out[kind] = train(
             network(c, kind), train_codes, train_labels, test_codes, test_labels, c, seed, backend
         )
@@ -189,8 +189,3 @@ def tsne_embedding(
     emb = TSNE(n_components=2, perplexity=p, random_state=seed, init="pca").fit_transform(stacked)
     emb = np.asarray(emb, dtype=np.float64)
     return emb[: data.shape[0]], emb[data.shape[0] :]
-
-
-def tuned(cfg: IrisConfig, **kwargs: float | int) -> IrisConfig:
-    """Small helper for hyper-parameter sweeps."""
-    return replace(cfg, **kwargs)  # type: ignore[arg-type]

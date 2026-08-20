@@ -114,22 +114,21 @@ class MergedCodes:
     """Distinct codes carrying more than one class label."""
 
 
-def merge_duplicate_codes(codes: Codes, labels: Codes) -> MergedCodes:
+def merge_duplicate_codes(codes: Codes, labels: npt.ArrayLike) -> MergedCodes:
     """Collapse samples sharing a 12-bit code; ``[ASSUMPTION]`` the merged label is the mean.
 
     A basis state carries one amplitude, so duplicates *must* be merged; the paper is silent on
     how.  Averaging keeps the merged target between the two class levels rather than silently
-    picking one.
+    picking one.  Already-merged (fractional) labels pass through unchanged.
     """
     c = np.asarray(codes, dtype=np.int64)
-    y = np.asarray(labels, dtype=np.int64)
+    y = np.asarray(labels, dtype=np.float64)
     uniq, inverse, counts = np.unique(c, return_inverse=True, return_counts=True)
-    sums = np.bincount(inverse, weights=y.astype(np.float64), minlength=uniq.size)
+    sums = np.bincount(inverse, weights=y, minlength=uniq.size)
     means = sums / counts
-    n_coll = 0
-    for i in range(uniq.size):
-        if counts[i] > 1 and np.unique(y[inverse == i]).size > 1:
-            n_coll += 1
+    spread = np.zeros(uniq.size, dtype=np.float64)
+    np.maximum.at(spread, inverse, np.abs(y - means[inverse]))
+    n_coll = int(np.count_nonzero(spread > 1e-12))
     return MergedCodes(
         codes=uniq.astype(np.int64),
         labels=means.astype(np.float64),

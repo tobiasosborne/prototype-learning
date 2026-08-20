@@ -201,6 +201,36 @@ def test_hidden_layer_weights_are_twelve_dimensional() -> None:
     assert p.shape == (4, 12) and p.min() >= 0.0 and p.max() <= 1.0
 
 
+def test_run_fig7_trains_both_models_with_the_same_parameter_count() -> None:
+    # [PTQNN §III.C] "the prototype model (with the same amount of parameters) on the right".
+    split = iris_data.load_split(seed=0)
+    cfg = iris_train.IrisConfig(iterations=1, n_hidden=1)
+    out = iris_train.run_fig7(
+        split.train_codes[:12],
+        split.train_labels[:12],
+        split.test_codes[:12],
+        split.test_labels[:12],
+        cfg,
+        seed=0,
+    )
+    assert set(out) == {"classic", "prototype"}
+    n = {k: iris_train.network(cfg, k).n_params for k in out}
+    assert n["classic"] == n["prototype"] == cfg.n_hidden * 13 + cfg.n_hidden + 1
+    for res in out.values():
+        assert len(res.train_loss) == len(res.test_loss) == 2
+
+
+def test_tsne_embedding_places_data_and_weights_in_one_plane() -> None:
+    split = iris_data.load_split(seed=0)
+    net = Network(n_inputs=12, n_hidden=4, hidden="prototype")
+    w = iris_train.hidden_layer_weights_for_tsne(
+        net, net.random_params(np.random.default_rng(0)), as_pattern=True
+    )
+    data_xy, w_xy = iris_train.tsne_embedding(split.train_codes, w, seed=0)
+    assert data_xy.shape == (np.unique(split.train_codes).size, 2)
+    assert w_xy.shape == (4, 2)
+
+
 @pytest.mark.slow
 def test_prototype_network_reaches_ninety_percent_test_accuracy() -> None:
     # [PTQNN §III.C] "when applying the regressed values to the nearest class labels, the
@@ -221,7 +251,5 @@ def test_prototype_network_reaches_ninety_percent_test_accuracy() -> None:
     assert acc >= 0.90, f"test accuracy {acc:.3f} (paper: ≈0.98)"
     # the read-out must also work sample by sample, not only on the batch it was trained on
     uniq, act = iris_model.basis_activations(net, res.params, split.test_codes)
-    per_sample = iris_model.labels_from_values(act)[
-        np.searchsorted(uniq, split.test_codes)
-    ]
+    per_sample = iris_model.labels_from_values(act)[np.searchsorted(uniq, split.test_codes)]
     assert float(np.mean(per_sample == split.test_labels)) >= 0.90
