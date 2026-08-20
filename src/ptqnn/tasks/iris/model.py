@@ -18,16 +18,30 @@ off the figure at ±0.0005; the exact integer normalisations 1/86 and 1/154 leav
 the 1 : 4 : 9 ratio.
 
 Model distribution: as for bit counting ``[PTQNN Fig 5]`` it is ``P(inputs = x, out = 1)``
-renormalised over ``x``, and the loss is ``KL(target ‖ model)`` ``[PTQNN Eq 4]``.  Unlike bit
-counting, the dataset codes are a *subset* (14–21 of 4096) of the input strings, and the
-prototype neuron's ``RX(φ)/CRX/RX(−φ)`` sandwich does not return the input register to its
-initial state — the CRX entangles it — so probability leaks onto non-dataset codes (95 % of it
-at a random initialisation).  We renormalise over the dataset codes, i.e. we post-select on the
-input register being a valid code, because that is what ``[PTQNN Fig 8]`` plots: the predicted
-histogram (bottom left, 30 bars) sums to 1.00 ± 0.01 over the dataset bins alone.  It also
-reproduces the ``[PTQNN Fig 7]`` starting values: over 12 seeds the median initial KL is 0.20
-(classic) and 0.23 (prototype) against the figure's 0.24 and 0.27, whereas renormalising over
-all 4096 strings gives 3.6 for the prototype net.  Pass ``support=None`` to switch it off.
+renormalised over *all* ``2^n_inputs`` input strings, and the loss is ``KL(target ‖ model)``
+``[PTQNN Eq 4]``.  Unlike bit counting, the dataset codes are a small subset (14–21 of 4096) of
+the input strings, and the prototype neuron's ``RX(φ)/CRX/RX(−φ)`` sandwich does *not* return the
+input register to its initial state — the ``CRX`` entangles it — so probability can leak onto
+non-dataset codes.  Renormalising over everything makes the loss pay for that leak, and this is
+load-bearing:
+
+* with the leak charged (``restrict=False``, the default) training drives it below 1 % on our
+  splits, the un-computation then really does restore the input register, the model becomes a
+  function of the single sample, and the held-out accuracy is 95 % — the paper's regime;
+* post-selecting on the dataset codes instead (``restrict=True``) removes the pressure and the
+  optimiser exploits interference *between* dataset samples: the training KL collapses to 1e-5
+  and the training accuracy to the 98 % ceiling, but the leak grows to 24–70 % and preparing a
+  single sample as a basis state gives chance-level (34 %) predictions.  A classifier that only
+  works on the batch it was trained with is not a classifier.
+
+The classic network is untouched by the choice: its neurons never act on the input qubits, so no
+two dataset codes ever interfere and both variants coincide bit for bit.
+
+``[PTQNN Fig 7]`` starts at KL ≈ 0.24 (classic) and ≈ 0.27 (prototype).  Under the full
+renormalisation that fixes the initialisation scale: uniform angles in ±0.7 rad give a median
+initial KL of 0.26 (classic) and 0.20 (prototype), while the ±π of
+:meth:`~ptqnn.circuits.neurons.Network.random_params` gives 4.2 for the prototype net.  See
+``ptqnn.tasks.iris.train.IrisConfig.init_scale`` — ``[ASSUMPTION]``, neither paper states it.
 
 ``[ASSUMPTION]`` read-out.  The paper says only "when applying the regressed values to the
 nearest class labels".  The three target levels are known up to one global scale (they are in
@@ -220,7 +234,7 @@ def kl_loss(
     codes: Codes,
     labels: npt.ArrayLike,
     backend: Backend | None = None,
-    restrict: bool = True,
+    restrict: bool = False,
 ) -> Loss:
     """``KL(target ‖ model)`` for the dataset ``(codes, labels)`` prepared in superposition."""
     psi0 = dataset_superposition(codes, net.n_qubits, net.input_qubits)

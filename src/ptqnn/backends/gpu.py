@@ -7,7 +7,7 @@ This module only moves data and dispatches; the numerics are the ones tested in
 ``tests/test_reference_backend.py`` and ``tests/test_trajectories.py``.
 
 On this machine (WSL2) CuPy needs ``LD_LIBRARY_PATH=/usr/lib/wsl/lib`` to find ``libcuda``; see
-``CLAUDE.md`` gotchas.  Import failures are turned into :class:`GpuUnavailable` at construction
+``CLAUDE.md`` gotchas.  Import failures are turned into :class:`GpuUnavailableError` at construction
 time so the module itself always imports.
 """
 
@@ -25,7 +25,7 @@ from ptqnn.circuits import ir
 Real = npt.NDArray[np.float64]
 
 
-class GpuUnavailable(RuntimeError):
+class GpuUnavailableError(RuntimeError):
     pass
 
 
@@ -35,14 +35,14 @@ def _cupy() -> Any:
 
         cp.cuda.runtime.getDeviceCount()
     except Exception as e:  # pragma: no cover - depends on the machine
-        raise GpuUnavailable(f"CuPy/CUDA not usable: {e}") from e
+        raise GpuUnavailableError(f"CuPy/CUDA not usable: {e}") from e
     return cp
 
 
 def gpu_available() -> bool:
     try:
         _cupy()
-    except GpuUnavailable:
+    except GpuUnavailableError:
         return False
     return True
 

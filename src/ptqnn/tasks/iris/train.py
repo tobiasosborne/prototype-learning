@@ -36,19 +36,24 @@ Real = npt.NDArray[np.float64]
 # [ASSUMPTION] KW–SA hyper-parameters.  Neither paper publishes a_n, c_n, T or k.  These are the
 # bit-count settings (`ptqnn.tasks.bitcount.SUPERPOSITION_CONFIG`) re-tuned for the Iris loss
 # scale (KL starts near 0.25 instead of 0.055); see experiments/runs/iris/*/meta.json.
-DEFAULT_A0 = 8.0
-DEFAULT_C0 = 0.2
+DEFAULT_A0 = 2.0
+DEFAULT_C0 = 0.1
 
 
 @dataclass(frozen=True)
 class IrisConfig:
     """Everything a Fig-7 run needs besides the data."""
 
-    iterations: int = 30
+    iterations: int = 40
     n_hidden: int = 4
     """``[ASSUMPTION]`` — ``[SNN Table I]`` lists Iris as "12 inp, 4 perc, 19 qubits"; the
     prototype paper does not repeat the number.  With one output neuron we use 12 + 4 + 1 = 17
     qubits."""
+    init_scale: float = 0.7
+    """``[ASSUMPTION]`` half-width of the uniform initialisation.  ``[PTQNN Fig 7]`` starts at
+    KL ≈ 0.24 (classic) / 0.27 (prototype); ±0.7 rad reproduces that (median 0.26 / 0.20 over 10
+    seeds) whereas the ±π default of ``Network.random_params`` gives 4.2 for the prototype net,
+    whose ``RX(φ)`` rotations then scatter the input register out of the code space."""
     a0: float = DEFAULT_A0
     alpha: float = 0.3
     c0: float = DEFAULT_C0
@@ -106,7 +111,7 @@ def train(
     """
     loss_train = iris_model.kl_loss(net, train_codes, train_labels, backend)
     loss_test = iris_model.kl_loss(net, test_codes, test_labels, backend)
-    x0 = net.random_params(np.random.default_rng(seed))
+    x0 = net.random_params(np.random.default_rng(seed), scale=cfg.init_scale)
     test_hist = [loss_test(x0)]
 
     def record(_n: int, x: Real, _fx: float) -> None:

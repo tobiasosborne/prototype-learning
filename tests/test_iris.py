@@ -110,21 +110,30 @@ def test_fast_evaluator_agrees_with_the_reference_backend(hidden: str) -> None:
     np.testing.assert_allclose(fast_r, slow_r, atol=1e-12)
 
 
-def test_model_distribution_is_post_selected_onto_the_dataset_codes() -> None:
-    # [PTQNN Fig 8, bottom left] the *predicted* histogram is plotted on the dataset bins only
-    # and its 30 bars sum to 1.00 ± 0.01 — the model distribution is renormalised over the
-    # dataset codes, not over all 2^12 input strings.
+def test_prototype_layer_leaks_the_input_register_and_support_post_selects_it() -> None:
+    # The prototype sandwich RX(φ)/CRX/RX(−φ) does not restore the input register (the CRX
+    # entangles it), so at a wide initialisation most of the probability lands outside the code
+    # space.  `support=` post-selects it back — the variant we do *not* train with, because
+    # nothing then penalises the leak (see the ptqnn.tasks.iris.model docstring).
     split = iris_data.load_split(seed=0)
     net = Network(n_inputs=12, n_hidden=2, hidden="prototype")
     psi = iris_model.dataset_superposition(split.train_codes, net.n_qubits, net.input_qubits)
     codes = np.unique(split.train_codes)
-    q = iris_model.model_distribution(net, net.random_params(np.random.default_rng(0)), psi)
-    qr = iris_model.model_distribution(
-        net, net.random_params(np.random.default_rng(0)), psi, support=codes
-    )
-    assert q[codes].sum() < 0.5  # the prototype sandwich leaks the input register badly
+    params = net.random_params(np.random.default_rng(0))
+    q = iris_model.model_distribution(net, params, psi)
+    qr = iris_model.model_distribution(net, params, psi, support=codes)
+    assert q[codes].sum() < 0.5
     assert qr[codes].sum() == pytest.approx(1.0)
     assert np.count_nonzero(qr) <= codes.size
+    # a classic layer never touches the inputs, so the two variants coincide exactly
+    netc = Network(n_inputs=12, n_hidden=2, hidden="classic")
+    pc = netc.random_params(np.random.default_rng(0))
+    psic = iris_model.dataset_superposition(split.train_codes, netc.n_qubits, netc.input_qubits)
+    np.testing.assert_allclose(
+        iris_model.model_distribution(netc, pc, psic),
+        iris_model.model_distribution(netc, pc, psic, support=codes),
+        atol=1e-12,
+    )
 
 
 @pytest.mark.parametrize(("hidden", "start"), [("classic", 0.24), ("prototype", 0.27)])
@@ -133,9 +142,12 @@ def test_initial_kl_matches_the_fig7_starting_values(hidden: str, start: float) 
     # prototype); read off the figures at ±0.005.  A random initialisation of our nets must
     # land in the same decade — this is the sharpest available check of the normalisation.
     split = iris_data.load_split(seed=0)
+    cfg = iris_train.IrisConfig()
     net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
     loss = iris_model.kl_loss(net, split.train_codes, split.train_labels)
-    kls = [loss(net.random_params(np.random.default_rng(s))) for s in range(12)]
+    kls = [
+        loss(net.random_params(np.random.default_rng(s), scale=cfg.init_scale)) for s in range(12)
+    ]
     assert 0.5 * start < float(np.median(kls)) < 2.0 * start
 
 
@@ -195,7 +207,7 @@ def test_prototype_network_reaches_ninety_percent_test_accuracy() -> None:
     # performance of our model is in the range of 98% accuracy."  We demand ≥ 90 %.
     split = iris_data.load_split(seed=0)
     net = Network(n_inputs=12, n_hidden=4, hidden="prototype")
-    cfg = iris_train.IrisConfig(iterations=30, n_hidden=4)
+    cfg = iris_train.IrisConfig()
     res = iris_train.train(
         net,
         split.train_codes,
@@ -207,3 +219,9 @@ def test_prototype_network_reaches_ninety_percent_test_accuracy() -> None:
     )
     acc = iris_model.accuracy(net, res.params, split.test_codes, split.test_labels)
     assert acc >= 0.90, f"test accuracy {acc:.3f} (paper: ≈0.98)"
+    # the read-out must also work sample by sample, not only on the batch it was trained on
+    uniq, act = iris_model.basis_activations(net, res.params, split.test_codes)
+    per_sample = iris_model.labels_from_values(act)[
+        np.searchsorted(uniq, split.test_codes)
+    ]
+    assert float(np.mean(per_sample == split.test_labels)) >= 0.90

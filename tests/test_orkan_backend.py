@@ -278,7 +278,7 @@ def test_timing_11_qubits(capsys: pytest.CaptureFixture[str]) -> None:
     bit-count network ``[PTQNN Fig 5]``.
 
     Marked ``slow`` because of the *numpy* leg: one density-matrix pass over ~300 ops at
-    ``n = 11`` moves a few hundred GB through ``np.tensordot`` transposes and takes ~15 min,
+    ``n = 11`` moves a few hundred GB through ``np.tensordot`` transposes and takes minutes,
     against seconds for orkan.  That ratio is the whole point of this backend.
     """
     net = bitcount.network(5, 5)
@@ -303,7 +303,8 @@ def test_timing_11_qubits(capsys: pytest.CaptureFixture[str]) -> None:
         print(
             f"\n[11q noisy bitcount(5,5): {len(noisy.ops)} ops = {n_1q} 1q + {n_2q} 2q, "
             f"{orkan_be.stats['two_qubit_channels']} 2q channels "
-            f"({orkan_be.stats['slow_path_channels']} slow path)]\n"
+            f"({orkan_be.stats['depolarizing_channels']} twirl route, "
+            f"{orkan_be.stats['slow_path_channels']} slow path)]\n"
             f"  orkan MIXED_TILED : {t_orkan:8.3f} s per probabilities()\n"
             f"  numpy density mat : {t_numpy:8.3f} s per probabilities()\n"
             f"  speed-up          : {t_numpy / t_orkan:8.1f}x\n"

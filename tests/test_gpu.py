@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from ptqnn.backends import gpu, reference as ref
+from ptqnn.backends import gpu
+from ptqnn.backends import reference as ref
 from ptqnn.backends.trajectories import TrajectoryBackend
 from ptqnn.circuits import ir
 from ptqnn.noise import channels as ch
