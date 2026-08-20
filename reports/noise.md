@@ -25,6 +25,28 @@ noise displaces both distributions equally.  Noise-aware training folds the chan
 angles (the recovered parameters are *worse* on a noiseless simulator).  Two-qubit error dominates
 the budget on 6/7 presets before routing and on all presets after routing to a lattice.
 
-## Pending
-* Study B at 11 qubits (now feasible: GPU evaluation 18 s → 1.5 s after the superoperator rewrite).
-* Flappy / ECG / Iris under noise.
+## Flappy Bird under noise (7 qubits, exact density matrix)
+
+Run `experiments/runs/flappy_noise/20260820T154249Z/results.md`.
+
+| finding | number |
+|---|---|
+| perfect games under every vendor preset (20 held-out seeds) | 100 % on all 7 devices; 0.2–1.0 % of grid decisions flip |
+| ibm_fez scaled ×2 / ×4 | 60 % / 0 % perfect games (median score 110 / 3) |
+| shot noise, clean policy | 1000 shots: 0 % perfect (median 28 pipes); 4000: 90 %; 10 000: 100 % |
+| shot noise + ibm_fez | 4000 shots: 55 % perfect; 10 000: 70 % |
+| decision margin δ = \|P(out=1)−½\| | median 0.019, p10 0.004 — flips/frame ≈ Φ(−2δ√N) |
+| noise-aware fine-tuning (5 sweeps, ibm_fez) | no change needed: already 100 % |
+
+Interpretation: gate noise at today's calibrated levels does not break the policy (the trained
+decisions sit ≥ 0.01 from threshold for most visited states); **shot noise does** — the policy is
+a thresholded expectation value with a ~0.02 margin, so ≥ 10⁴ shots per frame are needed for
+perfect play, which is the binding constraint for any hardware demonstration (see
+`reports/hardware-plan.md`).
+
+## Not run / pending
+* Noise-aware training at 11 qubits: measured at ≈1.3 h per (device, model) cell on orkan
+  (8 threads, 2.9 s/eval) — budgeted out of session 1; script supports it
+  (`--studies B --b-network full`, progress.log, partial results).
+* ECG and Iris under noise: `experiments/ecg_iris_noise.py` — see its run dir under
+  `experiments/runs/ecg_iris_noise/` for what completed in the time box.
