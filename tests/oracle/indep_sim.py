@@ -109,9 +109,7 @@ def embed(n: int, qubits: list[int], M: ComplexMatrix) -> ComplexMatrix:
     # This is literally M ⊗ I ⊗ ... ⊗ I in the temporary tensor-factor order.
     temporary_operator = local
     for _ in remaining:
-        temporary_operator = np.asarray(
-            np.kron(temporary_operator, _I), dtype=np.complex128
-        )
+        temporary_operator = np.asarray(np.kron(temporary_operator, _I), dtype=np.complex128)
 
     dimension = 2**n
     permutation = np.zeros((dimension, dimension), dtype=np.complex128)

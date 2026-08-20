@@ -120,3 +120,21 @@ def sample_counts(p: Real, shots: int, rng: np.random.Generator) -> npt.NDArray[
     """Multinomial shot counts — the only place randomness enters a noiseless run."""
     p = np.clip(p, 0, None)
     return rng.multinomial(shots, p / p.sum()).astype(np.int64)
+
+
+class StatevectorBackend:
+    """Exact, noiseless.  The default for reproduction runs."""
+
+    name = "numpy-statevector"
+
+    def probabilities(self, circuit: Circuit) -> Real:
+        return probabilities(run_statevector(circuit))
+
+
+class DensityMatrixBackend:
+    """Exact mixed-state evolution; accepts channels.  ≤ 12 qubits in practice."""
+
+    name = "numpy-density-matrix"
+
+    def probabilities(self, circuit: Circuit) -> Real:
+        return probabilities(run_density_matrix(circuit))
