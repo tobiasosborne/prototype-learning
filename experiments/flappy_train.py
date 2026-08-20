@@ -1,6 +1,6 @@
 """Train the Flappy Bird agent of ``[PTQNN §III.D, Fig 10]`` and record the run.
 
-    uv run python experiments/flappy_train.py --seed 0 --iterations 12
+    uv run python experiments/flappy_train.py --seed 0 --iterations 25
 
 Writes to ``experiments/runs/flappy/<timestamp>/``: ``params.npy`` (the 17 trained angles),
 ``meta.json`` (seed, git hash, every config), ``log.csv`` (loss and evaluation score per KW–SA
@@ -49,8 +49,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--seed", type=int, default=0, help="KW-SA / restart seed")
-    p.add_argument("--iterations", type=int, default=12, help="KW-SA coordinate sweeps")
-    p.add_argument("--restarts", type=int, default=200, help="random parameter vectors tried first")
+    p.add_argument("--iterations", type=int, default=25, help="KW-SA coordinate sweeps")
+    p.add_argument("--restarts", type=int, default=300, help="random parameter vectors tried first")
     p.add_argument("--restart-steps", type=int, default=250, help="frame cap during restarts")
     p.add_argument("--max-steps", type=int, default=1500, help="frame cap per training episode")
     p.add_argument("--eval-steps", type=int, default=5000, help="frame cap when scoring")

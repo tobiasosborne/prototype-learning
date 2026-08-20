@@ -314,21 +314,15 @@ def test_seed_rotation_draws_batches_from_the_pool() -> None:
 
 @pytest.mark.slow
 def test_quantum_policy_learns_to_pass_twenty_pipes() -> None:
-    # Bounded budget: 200 random restarts on 250-frame episodes + 12 KW-SA coordinate sweeps on
-    # five 1500-frame episodes (~800 loss evaluations, ~90 s wall clock).  We do not attempt the
-    # paper's 6-day / 450 000-pipe run [PTQNN §III.D]; the target is deterministic play on
-    # held-out seeds under a 5000-frame cap, where 110 pipes is a perfect game.  Measured for
-    # KW-SA seeds 0-3: 110/110 pipes on every one of the 20 held-out seeds 5..24.
+    # Bounded budget: the module defaults - 300 random restarts on 250-frame episodes + 25 KW-SA
+    # coordinate sweeps on five 1500-frame episodes (~1575 loss evaluations, ~3 min).  We do not
+    # attempt the paper's 6-day / 450 000-pipe run [PTQNN §III.D]; the target is deterministic
+    # play on held-out seeds under a 5000-frame cap, where 110 pipes is a perfect game.
+    # Measured for KW-SA seeds 0-3: 110/110 pipes on every one of the 20 held-out seeds 5..24.
+    # The cheaper 200-restart/12-sweep budget reaches the same score for most optimiser seeds but
+    # fails completely for one in four, so do not trim this without re-running that sweep.
     net = _net()
-    cfg = kwsa.KWSAConfig(**{**tr.DEFAULT_KWSA.__dict__, "iterations": 12, "seed": 0})
-    res = tr.train(
-        net,
-        cfg=cfg,
-        seeds=(0, 1, 2, 3, 4),
-        max_steps=1500,
-        n_restarts=200,
-        eval_seeds=(5, 6, 7, 8, 9),
-        eval_steps=5000,
-    )
+    cfg = kwsa.KWSAConfig(**{**tr.DEFAULT_KWSA.__dict__, "seed": 0})
+    res = tr.train(net, cfg=cfg, eval_seeds=(5, 6, 7, 8, 9), eval_steps=5000)
     assert res.loss < res.init_loss
     assert min(res.scores) >= 20, f"scores {res.scores} (loss {res.loss:.3f})"

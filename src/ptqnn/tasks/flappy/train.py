@@ -24,8 +24,8 @@ below is ``[ASSUMPTION]``:
   off by default (``batch=0``) and would need an optimiser that re-scores the incumbent.
 * **Budget.** We do not attempt the paper's 6-day run.  The target is deterministic perfect play
   on our clone under a step cap: 5000 frames at one pipe per 45 frames is 110 pipes.  The
-  defaults (200 restarts + 12 coordinate sweeps ≈ 800 loss evaluations, ~90 s) reach 110/110 on
-  20 held-out seeds.
+  defaults (300 restarts + 25 coordinate sweeps ≈ 1575 loss evaluations, ~3 min) reach 110/110
+  on all 20 held-out seeds, for every optimiser seed tried.
 
 Everything is single-process and deterministic: with the fast linear evaluation path and the
 decision cache of :class:`~ptqnn.tasks.flappy.agent.QuantumFlappyPolicy` a 1500-frame episode
@@ -52,7 +52,7 @@ Real = npt.NDArray[np.float64]
 Loss = Callable[[Real], float]
 
 DEFAULT_KWSA = kwsa.KWSAConfig(
-    iterations=12,
+    iterations=25,
     a0=0.4,
     alpha=0.602,
     c0=0.25,
@@ -64,10 +64,13 @@ DEFAULT_KWSA = kwsa.KWSAConfig(
     mode="coordinate",
 )
 """``[ASSUMPTION]`` — no schedule is published.  Coordinate sweeps (17 parameters × 3 probes =
-51 episode-batch evaluations per iteration, so 12 sweeps ≈ 612 evaluations), a comparatively
+51 episode-batch evaluations per iteration, so 25 sweeps ≈ 1275 evaluations), a comparatively
 large difference step ``c0 = 0.25`` rad because the loss is a step function of the decision
-boundary, and a small starting temperature so a sweep can climb out of a plateau.  12 sweeps
-is where the held-out score saturates at 110/110; more only costs time."""
+boundary, and a small starting temperature so a sweep can climb out of a plateau.  The budget is
+set by *robustness*, not by the median run: 12 sweeps after 200 restarts already reaches 110/110
+on 20 held-out seeds for most optimiser seeds, but fails outright (0/20, loss ≈ −2.8) for one in
+four — the restarts never find a surviving basin and 12 sweeps cannot climb out.  300 restarts +
+25 sweeps was perfect on every optimiser seed we tried."""
 
 
 @dataclass(frozen=True)
@@ -223,7 +226,7 @@ def train(
     seeds: Sequence[int] = (0, 1, 2, 3, 4),
     max_steps: int = 1500,
     objective_config: ObjectiveConfig | None = None,
-    n_restarts: int = 200,
+    n_restarts: int = 300,
     restart_steps: int = 250,
     batch: int = 0,
     eval_seeds: Sequence[int] | None = None,
