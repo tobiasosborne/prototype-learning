@@ -65,11 +65,8 @@ from ptqnn.hardware.gatesets import GATESETS, GENERIC, GateSet
 Complex = npt.NDArray[np.complex128]
 Coupling = list[tuple[int, int]]
 
-_ATOL = 1e-10
-
 _I = np.eye(2, dtype=np.complex128)
 _X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
-_Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
 
 # --- extra gate factories (names the IR does not ship) ----------------------------------------
@@ -145,15 +142,13 @@ def zz(a: int, b: int) -> ir.Gate:
 
 def ms_matrix(theta: float) -> Complex:
     xx = np.kron(_X, _X)
-    return np.cos(theta / 2) * np.eye(4, dtype=np.complex128) - 1j * np.sin(theta / 2) * xx
+    m = np.cos(theta / 2) * np.eye(4, dtype=np.complex128) - 1j * np.sin(theta / 2) * xx
+    return np.asarray(m, dtype=np.complex128)
 
 
 def ms(a: int, b: int, theta: float = np.pi / 2) -> ir.Gate:
     """Mølmer–Sørensen ``exp(-i(θ/2)·X⊗X)``; fully entangling at ``θ = π/2``."""
     return ir.Gate((a, b), ms_matrix(theta), "ms", (float(theta),))
-
-
-_FACTORY_1Q = {"rx": ir.rx, "ry": ir.ry, "rz": ir.rz}
 
 
 # --- helpers ----------------------------------------------------------------------------------
@@ -222,9 +217,7 @@ def _expand_to_cx(circuit: ir.Circuit) -> list[ir.Gate]:
                 f"transpile only handles unitary circuits; op {op.name!r} is a channel. "
                 "Attach the noise model after transpiling."
             )
-        if op.n_qubits == 1:
-            out.append(op)
-        elif op.name == "cx":
+        if op.n_qubits == 1 or op.name == "cx":
             out.append(op)
         elif op.name == "crx":
             out += decompose_crx(op.qubits[0], op.qubits[1], op.params[0])
@@ -234,6 +227,24 @@ def _expand_to_cx(circuit: ir.Circuit) -> list[ir.Gate]:
         elif op.name == "swap":
             a, b = op.qubits
             out += [ir.cx(a, b), ir.cx(b, a), ir.cx(a, b)]
+        elif op.name in ("rzz", "zz"):
+            # RZZ(θ) = CX·(I⊗RZ(θ))·CX, exactly; ``zz`` is the θ = π/2 case.
+            a, b = op.qubits
+            theta = op.params[0] if op.params else np.pi / 2
+            out += [ir.cx(a, b), ir.rz(b, theta), ir.cx(a, b)]
+        elif op.name == "ms":
+            # MS(θ) = XX(θ) = (H⊗H)·RZZ(θ)·(H⊗H).
+            a, b = op.qubits
+            theta = op.params[0] if op.params else np.pi / 2
+            out += [
+                ir.h(a),
+                ir.h(b),
+                ir.cx(a, b),
+                ir.rz(b, theta),
+                ir.cx(a, b),
+                ir.h(a),
+                ir.h(b),
+            ]
         else:
             raise NotImplementedError(
                 f"no expansion rule for {op.name!r} on {op.n_qubits} qubits; add one to "
@@ -684,7 +695,10 @@ def coupling_for(topology: str, n: int) -> tuple[Coupling, str]:
         return ring(n), "ring as published"
     if "grid" in t or "square" in t or "lattice" in t:
         side = int(np.ceil(np.sqrt(n)))
-        return grid(side, side), f"[ASSUMPTION] {side}×{side} square-lattice patch"
+        # Keep the row-major prefix of length n: it is connected (node i>0 always couples to
+        # i-1 or i-side, both already in the prefix) and gives a coupling map of exactly n nodes.
+        patch = _canon((a, b) for a, b in grid(side, side) if a < n and b < n)
+        return patch, f"[ASSUMPTION] {side}×{side} square-lattice patch, first {n} sites"
     return all_to_all(n), f"[ASSUMPTION] topology {topology!r} unrecognised; assumed all-to-all"
 
 
@@ -696,9 +710,13 @@ def compile_for(
     """Rewrite ``circuit`` for ``device`` (a :class:`~ptqnn.noise.presets.DeviceSpec`).
 
     Gate set from ``device.native_2q``/``native_1q``, coupling from ``device.topology``.  Routing
-    runs *after* the basis rewrite, so the SWAPs it inserts are then themselves rewritten into
-    the native basis (a SWAP is 3 CX, i.e. 3 native entanglers — a big cost on a lattice and
-    exactly why the trapped-ion all-to-all columns of the compile table are so much shorter).
+    runs *before* the basis rewrite — a ``CRX`` and the two ``CX`` gates it becomes make exactly the
+    same adjacency demand, so routing early is free and rebasing once afterwards means the
+    router's SWAPs are themselves emitted natively.  Each SWAP costs 3 entanglers, which is why
+    the linear and heavy-hex rows of ``reports/hardware-compile-table.md`` are several times the
+    all-to-all ones: the prototype network is a complete bipartite graph, the worst possible fit
+    for a lattice.  ``metrics["n_swap"]`` is the router's count (the rebase has by then dissolved
+    the SWAP gates); ``metrics["n_2q_from_swap"] = 3·n_swap`` is what they cost.
     """
     n = circuit.n_qubits
     dev_n = int(getattr(device, "n_qubits", 0) or 0)
@@ -722,10 +740,17 @@ def compile_for(
     if durations is None:
         notes.append("[ASSUMPTION] no published gate durations: critical_path_ns is undefined")
 
+    # After the rebase every SWAP has become three native entanglers, so ``metrics(final)`` can
+    # no longer see them; carry the router's own count across and record what it cost.
+    m = metrics(final, durations)
+    n_swap = routed.count("swap")
+    m["n_swap"] = n_swap
+    m["n_2q_from_swap"] = 3 * n_swap
+
     return CompiledCircuit(
         circuit=final,
         qubit_map=qmap,
-        metrics=metrics(final, durations),
+        metrics=m,
         gateset=gs,
         coupling=coupling,
         device_name=str(getattr(device, "name", "")),

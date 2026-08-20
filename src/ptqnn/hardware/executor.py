@@ -192,8 +192,8 @@ class IBMRuntimeExecutor:
         from qiskit import transpile as qiskit_transpile
         from qiskit.transpiler import CouplingMap
 
-        coupling = list(self.coupling) if self.coupling is not None else heavy_hex_patch(
-            circuit.n_qubits
+        coupling = (
+            list(self.coupling) if self.coupling is not None else heavy_hex_patch(circuit.n_qubits)
         )
         cmap = CouplingMap([[a, b] for a, b in coupling] + [[b, a] for a, b in coupling])
         isa = qiskit_transpile(
@@ -371,6 +371,21 @@ def cost_estimate(
     vendor = str(getattr(device, "vendor", "")).lower()
     name = str(getattr(device, "name", compiled.device_name)).lower()
 
+    slug_early = name.replace("-", "_")
+    if slug_early in _BRAKET_PER_SHOT and ("aws" in vendor or "braket" in vendor):
+        usd = _BRAKET_PER_TASK + _BRAKET_PER_SHOT[slug_early] * shots
+        return CostEstimate(
+            model="aws_braket",
+            unit="USD",
+            value=usd,
+            breakdown={
+                "per_task": _BRAKET_PER_TASK,
+                "per_shot": _BRAKET_PER_SHOT[slug_early],
+                "shots": shots,
+            },
+            sources=(_SOURCES["braket"],),
+        )
+
     if "quantinuum" in vendor or name.startswith("quantinuum"):
         # "HQC = 5 + (N_1q + 10 N_2q + 5 N_m)/5000 * C" with N_m the state-prep/measurement ops.
         n_m = 2 * nq  # implicit initial preparation + the final measurement of every qubit
@@ -411,7 +426,7 @@ def cost_estimate(
         )
 
     slug = name.replace("-", "_")
-    if slug in _BRAKET_PER_SHOT:
+    if slug in _BRAKET_PER_SHOT and ("aws" in vendor or "braket" in vendor):
         per_shot = _BRAKET_PER_SHOT[slug]
         usd = _BRAKET_PER_TASK + per_shot * shots
         return CostEstimate(
@@ -452,9 +467,7 @@ def cost_estimate(
     )
 
 
-def _wall_clock_s(
-    m: Mapping[str, float | int | None], shots: int, job_overhead_s: float
-) -> float:
+def _wall_clock_s(m: Mapping[str, float | int | None], shots: int, job_overhead_s: float) -> float:
     ns = m.get("critical_path_ns")
     per_shot_s = (float(ns) * 1e-9) if ns else 0.0
     return job_overhead_s + shots * per_shot_s

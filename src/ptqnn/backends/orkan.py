@@ -23,16 +23,24 @@ so a mislabelled :class:`~ptqnn.circuits.ir.Gate` falls back to the generic
 
 Two-qubit channels
 ------------------
-orkan has no 2-qubit ``channel_2q``; ``channel_1q`` is all there is.  Two routes are implemented:
+orkan has no 2-qubit ``channel_2q``; ``channel_1q`` is all there is.  Everything below rests on
+one observation: orkan's storage buffer is a *linear* indexing of the density-matrix entries, so
+a real-coefficient linear combination of buffers is that combination of density matrices.  orkan
+exports ``state_cp`` but no axpy, so the arithmetic is done in numpy straight on the buffer.
+Three routes, most specific first:
 
-* **mixture of unitaries** (the default, and what depolarising/Pauli channels are): if every
-  ``K_i = √p_i U_i`` with ``U_i`` unitary — detected numerically from ``K_i† K_i = p_i I`` — then
-  ``ρ ↦ Σ_i p_i U_i ρ U_i†`` is evaluated with a scratch copy of orkan's *storage buffer*.  orkan
-  exports ``state_cp`` but no axpy, so the accumulation is done in numpy directly on the buffer.
-  This is layout-agnostic and exact: the tiled buffer is a linear indexing of the matrix entries
-  (padding excluded, and it stays zero), so a real-coefficient linear combination of buffers is
-  the same linear combination of density matrices.  Cost: ``len(kraus)`` two-qubit gates plus
-  three passes over a buffer of ``≈ 2^(2n-1)`` complex numbers.
+* **depolarising** ``E(ρ) = (1−q)ρ + q I/d · Tr ρ`` (what ``NoiseModel.two_qubit`` produces),
+  recognised from the Choi matrix by :func:`depolarizing_strength`.  The uniform Pauli twirl
+  factorises over qubits — ``I/d · Tr_S ρ = (T_{q_1} ∘ … ∘ T_{q_k})(ρ)`` with ``T`` the
+  single-qubit twirl ``{P/2}`` — so it is *k* ``channel_1q`` calls, one scaled buffer copy and
+  one add, independent of the number of Kraus operators.  Measured at 11 qubits on a 2-qubit
+  depolarising channel: **32 ms**, against **400 ms** for the 16-term generic mixture below
+  (``channel_1q`` costs 0.6 ms where ``two_from_mat`` costs 8 ms).
+* **mixture of unitaries** ``K_i = √p_i U_i`` with ``U_i`` unitary — detected numerically from
+  ``K_i† K_i = p_i I``, true of every Pauli channel.  ``ρ ↦ Σ_i K_i ρ K_i†`` is accumulated
+  term by term against a scratch copy of the buffer; ``K_i`` (not ``U_i``) is what is handed to
+  ``two_from_mat``, which keeps the weight inside the C kernel and the accumulation a plain
+  ``acc += raw``.  Cost: ``len(kraus)`` two-qubit gates plus three buffer passes each.
 * **general Kraus set** (amplitude damping on two qubits, and anything else that is not a
   mixture of unitaries): the density matrix is pulled out with ``to_numpy``, the channel is
   applied by :func:`ptqnn.backends.reference.apply_channel`, and the result is written back with
@@ -209,22 +217,52 @@ def diagonal(state: ffi.OrkanState, order: str = "msb0") -> Real:
 # ---------------------------------------------------------------------------
 
 
-def unitary_mixture(kraus: Sequence[Complex], atol: float = _ATOL) -> list[tuple[float, Complex]]:
-    """``[(p_i, U_i)]`` with ``K_i = √p_i U_i`` and ``U_i`` unitary, or ``[]`` if not of that form.
+def unitary_mixture(kraus: Sequence[Complex], atol: float = _ATOL) -> list[Complex]:
+    """The Kraus operators, dropping the null ones, iff every ``K_i = √p_i U_i`` with ``U_i``
+    unitary; ``[]`` if the set is not of that form.
 
-    ``K† K = p I`` characterises it; ``p = ‖K‖_F² / d``.  True for depolarising and Pauli
-    channels (every Kraus operator is a scaled Pauli string), false for amplitude damping.
+    ``K† K = p I`` characterises it, with ``p = ‖K‖_F² / d``.  True for depolarising and Pauli
+    channels (every Kraus operator is a scaled Pauli string), false for amplitude damping.  The
+    weights are left folded into the operators: ``K ρ K† = p U ρ U†`` is what the caller wants
+    anyway, and orkan's ``two_from_mat`` applies a general ``M ρ M†``.
     """
-    out: list[tuple[float, Complex]] = []
+    out: list[Complex] = []
     for k in kraus:
         d = k.shape[0]
         p = float(np.vdot(k, k).real / d)
         if p <= atol:
-            continue  # a zero Kraus operator contributes nothing
+            continue  # a null Kraus operator contributes nothing
         if not np.allclose(k.conj().T @ k, p * np.eye(d), atol=atol):
             return []
-        out.append((p, k / np.sqrt(p)))
+        out.append(k)
     return out
+
+
+#: Kraus form of the complete single-qubit Pauli twirl ``T(ρ) = (1/4) Σ_P P ρ P = I·Tr(ρ)/2``.
+_TWIRL_1Q: list[Complex] = [
+    m / 2 for m in (np.eye(2, dtype=np.complex128), ir.x(0).matrix, ir.y(0).matrix, ir.z(0).matrix)
+]
+
+
+def depolarizing_strength(kraus: Sequence[Complex], atol: float = 1e-10) -> float | None:
+    """``q`` if the Kraus set is ``E(ρ) = (1−q)ρ + q I/d · Tr ρ``, else ``None``.
+
+    Decided on the Choi matrix ``C = Σ_k vec(K_k) vec(K_k)†`` (row-major ``vec``, the convention
+    of :func:`ptqnn.noise.channels.choi`), which for the depolarising channel is
+    ``(1−q)|Ω⟩⟨Ω| + q I/d`` with ``|Ω⟩ = Σ_i |ii⟩``.  ``q`` is read off the entanglement fidelity
+    ``F_e = ⟨Ω|C|Ω⟩/d² = 1 − q(d²−1)/d²`` and the whole ``d² × d²`` matrix is then verified, so a
+    channel that merely has the right fidelity is not mistaken for a depolarising one.
+    """
+    d = kraus[0].shape[0]
+    c = np.zeros((d * d, d * d), dtype=np.complex128)
+    for k in kraus:
+        v = k.T.reshape(-1)  # v[i*d + o] = K[o, i]
+        c += np.outer(v, v.conj())
+    omega = np.eye(d, dtype=np.complex128).reshape(-1)
+    f_e = float((omega.conj() @ c @ omega).real) / d**2
+    q = (1.0 - f_e) * d**2 / (d**2 - 1)
+    want = (1.0 - q) * np.outer(omega, omega.conj()) + q * np.eye(d * d) / d
+    return q if np.allclose(c, want, atol=atol) else None
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +284,8 @@ class OrkanDensityMatrixBackend:
         The default 32 is the survey optimum on this 64-core box (see the module docstring: 64
         threads is ~3.6× slower than 32).  ``None`` leaves the environment alone.
     mixture_fast_path:
-        Apply 2-qubit mixture-of-unitary channels with in-buffer accumulation instead of the
-        dense numpy round trip.  Only turn it off to exercise the slow path in tests.
+        Use the depolarising and mixture-of-unitary in-buffer routes for 2-qubit channels
+        instead of the dense numpy round trip.  Only turn it off to exercise the slow path.
     native_gates:
         Route ``h/x/y/z/rx/ry/rz/cx`` to orkan's specialised kernels.  Only turn it off to check
         the generic ``single_from_mat``/``two_from_mat`` path against them.
@@ -269,6 +307,7 @@ class OrkanDensityMatrixBackend:
         self.stats: dict[str, int] = {
             "circuits": 0,
             "two_qubit_channels": 0,
+            "depolarizing_channels": 0,
             "slow_path_channels": 0,
         }
         self._warned_slow_path = False
@@ -361,31 +400,54 @@ class OrkanDensityMatrixBackend:
                 f"orkan has no {chan.n_qubits}-qubit channel (channel {chan.name!r})"
             )
         self.stats["two_qubit_channels"] += 1
-        mixture = unitary_mixture(chan.kraus) if self.mixture_fast_path else []
+        if not self.mixture_fast_path:
+            self._apply_channel_dense(state, chan)
+            return
+        q = depolarizing_strength(chan.kraus)
+        if q is not None:
+            self.stats["depolarizing_channels"] += 1
+            self._apply_depolarizing(state, chan.qubits, q)
+            return
+        mixture = unitary_mixture(chan.kraus)
         if mixture:
             self._apply_unitary_mixture(state, chan.qubits, mixture)
         else:
             self._apply_channel_dense(state, chan)
 
     @staticmethod
+    def _apply_depolarizing(state: ffi.OrkanState, qubits: tuple[int, ...], q: float) -> None:
+        """``ρ ↦ (1−q)ρ + q I/d · Tr_S ρ`` with the twirl factored into ``channel_1q`` calls.
+
+        ``√q`` rides on the first twirl's Kraus operators (orkan does not check trace
+        preservation), so the whole channel is one scaled buffer copy, ``k`` C-kernel calls and
+        one add — no ``two_from_mat`` and no per-Kraus-operator pass.
+        """
+        raw, _, _ = _require_tiled(state)
+        keep = np.multiply(raw, 1.0 - q, out=np.empty_like(raw))
+        state.apply_kraus_1q(qubits[0], [np.sqrt(q) * k for k in _TWIRL_1Q])
+        for qi in qubits[1:]:
+            state.apply_kraus_1q(qi, _TWIRL_1Q)
+        raw += keep
+
+    @staticmethod
     def _apply_unitary_mixture(
-        state: ffi.OrkanState, qubits: tuple[int, ...], mixture: list[tuple[float, Complex]]
+        state: ffi.OrkanState, qubits: tuple[int, ...], kraus: list[Complex]
     ) -> None:
-        """``ρ ↦ Σ_i p_i U_i ρ U_i†`` accumulated in orkan's own storage buffer.
+        """``ρ ↦ Σ_i K_i ρ K_i†`` accumulated in orkan's own storage buffer.
 
         Valid because the tiled buffer is a *linear* map of the matrix entries: writing
-        ``Σ_i p_i buf(U_i ρ U_i†)`` into it is the same as writing ``buf(Σ_i p_i U_i ρ U_i†)``.
-        (Real coefficients matter: any conjugate-mirrored slot stays consistent too.)
+        ``Σ_i buf(K_i ρ K_i†)`` into it is the same as writing ``buf(Σ_i K_i ρ K_i†)``.  (Real
+        coefficients matter: any conjugate-mirrored slot stays consistent too.)
         """
         raw, _, _ = _require_tiled(state)
         q0, q1 = qubits
         base = raw.copy()
         acc = np.zeros_like(raw)
-        for i, (p, u) in enumerate(mixture):
+        for i, k in enumerate(kraus):
             if i:
                 raw[:] = base
-            state.apply_2q_unitary(q0, q1, u)
-            acc += p * raw
+            state.apply_2q_unitary(q0, q1, k)  # two_from_mat applies a general M ρ M†
+            acc += raw
         raw[:] = acc
 
     def _apply_channel_dense(self, state: ffi.OrkanState, chan: Channel) -> None:

@@ -17,7 +17,11 @@ import pytest
 from ptqnn.backends import _orkan_ffi as ffi
 from ptqnn.backends import reference
 from ptqnn.backends.base import Backend
-from ptqnn.backends.orkan import OrkanDensityMatrixBackend
+from ptqnn.backends.orkan import (
+    OrkanDensityMatrixBackend,
+    depolarizing_strength,
+    unitary_mixture,
+)
 from ptqnn.circuits import ir
 from ptqnn.noise import channels as ch
 from ptqnn.noise.model import NoiseModel, NoisyBackend
@@ -161,11 +165,33 @@ def two_qubit_depolarizing_circuit(n: int = 4) -> ir.Circuit:
     return circ
 
 
+@pytest.mark.parametrize("q", [0.0, 0.09, 0.5, 1.0])
+@pytest.mark.parametrize("k", [1, 2])
+def test_depolarizing_strength_recognises_depolarising(q: float, k: int) -> None:
+    got = depolarizing_strength(ch.depolarizing(q, k))
+    assert got is not None
+    assert abs(got - q) < 1e-12
+
+
+def test_depolarizing_strength_rejects_other_channels() -> None:
+    """A biased Pauli channel and amplitude damping must not be mistaken for depolarising —
+    the second has the same average fidelity as a depolarising channel of matched strength."""
+    biased = ch.pauli(0.2, 0.05, 0.01)
+    assert depolarizing_strength(biased) is None
+    assert unitary_mixture(biased)  # …but it is still a mixture of unitaries
+    damping = ch.amplitude_damping(0.3)
+    assert depolarizing_strength(damping) is None
+    assert unitary_mixture(damping) == []
+    assert depolarizing_strength(ch.tensor(ch.depolarizing(0.1), ch.depolarizing(0.1))) is None
+
+
 def test_two_qubit_mixture_of_unitaries_fast_path() -> None:
     be = OrkanDensityMatrixBackend()
     circ = two_qubit_depolarizing_circuit()
     assert np.allclose(be.density_matrix(circ), reference.run_density_matrix(circ), atol=TOL)
     assert be.stats["two_qubit_channels"] == 3
+    # two depolarising channels take the twirl route, the biased Pauli one the mixture route
+    assert be.stats["depolarizing_channels"] == 2
     assert be.stats["slow_path_channels"] == 0
 
 
@@ -248,6 +274,13 @@ def test_no_leak_over_many_calls() -> None:
 
 @pytest.mark.slow
 def test_timing_11_qubits(capsys: pytest.CaptureFixture[str]) -> None:
+    """Reported, never asserted: seconds per ``probabilities`` call on the 11-qubit noisy
+    bit-count network ``[PTQNN Fig 5]``.
+
+    Marked ``slow`` because of the *numpy* leg: one density-matrix pass over ~300 ops at
+    ``n = 11`` moves a few hundred GB through ``np.tensordot`` transposes and takes ~15 min,
+    against seconds for orkan.  That ratio is the whole point of this backend.
+    """
     net = bitcount.network(5, 5)
     assert net.n_qubits == 11
     params = net.random_params(np.random.default_rng(0))

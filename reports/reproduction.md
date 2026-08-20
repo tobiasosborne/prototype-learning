@@ -53,10 +53,10 @@ thrash between inputs; whatever the authors' iterative scheme was (SNN describes
 
 ## Fig 10–11 — Flappy Bird
 
-Run `experiments/runs/flappy/20260820T142739Z/` (params.npy, best.gif, log.csv).  Architecture as
+Run `experiments/runs/flappy/20260820T143753Z/` (earlier run 20260820T142739Z identical outcome) (params.npy, best.gif, log.csv).  Architecture as
 Fig 10: 2 inputs `RX(2·asin(√x))` (bird height, next-gap centre, normalised), 4 prototype
 neurons, classic output; flap iff `P(out=1) > 0.5`.  Trained by KW–SA on the shaped episode
-return over 5 training seeds (813 loss evaluations, 129 s): **110 pipes in 5000 frames (the cap)
+return over 5 training seeds (1576 loss evaluations, 173 s; 8/8 optimiser seeds reach the same result): **110 pipes in 5000 frames (the cap)
 on all 20 held-out seeds** — the clone's equivalent of the paper's "plays the game perfectly".
 Our clone (`ptqnn/tasks/flappy/env.py`, all constants `[ASSUMPTION]`) uses flap −7 px/frame and
 gap/spacing 120/180 px: the classic −9/100/144 is provably unsolvable for a memoryless policy

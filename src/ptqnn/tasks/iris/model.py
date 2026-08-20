@@ -169,8 +169,8 @@ def _restrict(p: Real, support: Codes | None) -> Real:
     return q / z if z > 0 else np.full(q.shape, 1.0 / q.size)
 
 
-def fast_model_distribution(net: Network, params: npt.ArrayLike, psi0: Complex) -> Real:
-    """``P(inputs = x, out = 1)`` renormalised, without simulating the output qubit."""
+def fast_joint(net: Network, params: npt.ArrayLike, psi0: Complex) -> Real:
+    """Unnormalised ``P(inputs = x, out = 1)``, without simulating the output qubit."""
     psi_full = np.asarray(psi0, dtype=np.complex128).reshape(-1, 2)
     if not np.allclose(psi_full[:, 1], 0.0):
         raise ValueError("fast evaluator requires the output qubit prepared in |0⟩")
@@ -179,9 +179,17 @@ def fast_model_distribution(net: Network, params: npt.ArrayLike, psi0: Complex) 
     for gate in _hidden_ops(net, params):
         _apply_gate(psi, n, gate)
     p = (np.abs(psi) ** 2).reshape(2**net.n_inputs, 2**net.n_hidden)
-    joint = p @ output_activation_table(net, params)
+    return np.asarray(p @ output_activation_table(net, params), dtype=np.float64)
+
+
+def _normalise(joint: Real) -> Real:
     z = joint.sum()
     return joint / z if z > 0 else np.full(joint.shape, 1.0 / joint.size)
+
+
+def fast_model_distribution(net: Network, params: npt.ArrayLike, psi0: Complex) -> Real:
+    """``P(inputs = x, out = 1)`` renormalised, without simulating the output qubit."""
+    return _normalise(fast_joint(net, params, psi0))
 
 
 def model_distribution(
@@ -201,8 +209,7 @@ def model_distribution(
         return _restrict(fast_model_distribution(net, params, psi0), support)
     p = backend.probabilities(net.circuit(params, initial_state=np.asarray(psi0)))
     joint = ref.marginal(p, [*net.input_qubits, net.output_qubit]).reshape(2**net.n_inputs, 2)[:, 1]
-    z = joint.sum()
-    return _restrict(joint / z if z > 0 else np.full(joint.shape, 1.0 / joint.size), support)
+    return _restrict(_normalise(joint), support)
 
 
 # --- losses ------------------------------------------------------------------------------------
@@ -248,37 +255,46 @@ def train_test_losses(
 
 
 def fit_level_scale(values: Real) -> float:
-    """Scale ``s`` minimising ``Σ_x min_l (s·v(x) − (l+1)²)²`` — label-free calibration.
+    """The constant ``s`` with ``s·v(x) ≈ (label(x)+1)²`` — label-free calibration.
 
-    The three target levels are known up to one global constant (ratio 1 : 4 : 9), which depends
-    on the class composition of the evaluated set.  Fitting it uses no labels: it is the 1-D
-    k-means of the regressed values with the centroid *ratios* frozen.
+    The three target levels are known up to one global constant (they are in the ratio 1 : 4 : 9)
+    which depends on the class composition of the evaluated set: with
+    ``p(x) = (l_x+1)²/Σ_y (l_y+1)²`` the constant is ``s = Σ_y (l_y+1)²``, and the evaluated set
+    is not the one the model was trained on.  We fit it *in log space*: minimise
+    ``Σ_x min_l (log v(x) + log s − log l)²`` over ``log s``, a 1-D shift against the three fixed
+    anchors ``log 1, log 4, log 9``.
+
+    Least squares on the linear residual ``Σ_x min_l (s v(x) − l)²`` must not be used — shrinking
+    ``s`` shrinks every residual, so it collapses onto "everything is class 0" once the values
+    carry more than ~20 % noise; nor does the fixed point ``s ← Σ_x nearest level`` hold, it
+    spirals down for the same reason
+    (``test_level_scale_fit_survives_noisy_regressed_values``).
     """
     v = np.asarray(values, dtype=np.float64)
     if v.size == 0 or v.max() <= 0:
         return 1.0
-    best_s, best_r = 1.0, np.inf
-    for level in LEVELS:
-        s = float(level / v.max())
-        for _ in range(50):
-            assigned = LEVELS[np.abs(s * v[:, None] - LEVELS[None, :]).argmin(axis=1)]
-            denom = float(v @ v)
-            s_new = float(assigned @ v / denom) if denom > 0 else s
-            if s_new == s:
-                break
-            s = s_new
-        assigned = LEVELS[np.abs(s * v[:, None] - LEVELS[None, :]).argmin(axis=1)]
-        r = float(np.sum((s * v - assigned) ** 2))
-        if r < best_r:
-            best_s, best_r = s, r
-    return best_s
+    lv = np.log(np.maximum(v / v.sum(), 1e-15))
+    anchors = np.log(LEVELS)
+    lo = float(anchors.min() - lv.max()) - 1.0
+    hi = float(anchors.max() - lv.min()) + 1.0
+    grid = np.linspace(lo, hi, 4001)
+    d = (lv[None, :, None] + grid[:, None, None] - anchors[None, None, :]) ** 2
+    return float(np.exp(grid[int(d.min(axis=2).sum(axis=1).argmin())]))
 
 
 def labels_from_values(values: Real, scale: float | None = None) -> npt.NDArray[np.int64]:
-    """ "Applying the regressed values to the nearest class labels" ``[PTQNN §III.C]``."""
+    """ "Applying the regressed values to the nearest class labels" ``[PTQNN §III.C]``.
+
+    "Nearest" is taken in log space, consistently with :func:`fit_level_scale`: the class
+    boundaries are the geometric means √(1·4) = 2 and √(4·9) = 6 rather than the arithmetic
+    2.5 and 6.5.  The regression error on a probability that spans a factor 9 is multiplicative,
+    so an arithmetic boundary systematically pulls the top class down.
+    """
     v = np.asarray(values, dtype=np.float64)
+    v = v / v.sum() if v.sum() > 0 else v
     s = fit_level_scale(v) if scale is None else scale
-    return np.abs(s * v[:, None] - LEVELS[None, :]).argmin(axis=1).astype(np.int64)
+    lv = np.log(np.maximum(s * v, 1e-15))
+    return np.abs(lv[:, None] - np.log(LEVELS)[None, :]).argmin(axis=1).astype(np.int64)
 
 
 def regressed_values(
@@ -288,6 +304,28 @@ def regressed_values(
     uniq = np.unique(np.asarray(codes, dtype=np.int64))
     psi0 = dataset_superposition(uniq, net.n_qubits, net.input_qubits)
     return uniq, model_distribution(net, params, psi0, backend, uniq)[uniq]
+
+
+def basis_activations(
+    net: Network, params: npt.ArrayLike, codes: Codes, backend: Backend | None = None
+) -> tuple[Codes, Real]:
+    """``(distinct codes, P(out = 1 | x))`` with each code prepared as a *basis* state.
+
+    The per-sample read-out.  For a classic hidden layer it is proportional to the superposition
+    read-out of :func:`regressed_values` (the input register is never touched, so no two dataset
+    codes interfere); for a prototype layer the ``RX/CRX/RX(−φ)`` sandwich makes the two differ,
+    and only this one is a function of the single sample.
+    """
+    uniq = np.unique(np.asarray(codes, dtype=np.int64))
+    out = np.empty(uniq.size, dtype=np.float64)
+    for i, c in enumerate(uniq):
+        psi = dataset_superposition(np.array([c], dtype=np.int64), net.n_qubits, net.input_qubits)
+        if backend is None:
+            out[i] = fast_joint(net, params, psi).sum()
+        else:
+            p = backend.probabilities(net.circuit(params, initial_state=psi))
+            out[i] = ref.marginal(p, [net.output_qubit])[1]
+    return uniq, out
 
 
 def predict_labels(

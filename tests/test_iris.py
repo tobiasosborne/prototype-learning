@@ -146,6 +146,22 @@ def test_predict_labels_inverts_the_target_levels() -> None:
     np.testing.assert_array_equal(iris_model.labels_from_values(values), labels)
 
 
+def test_level_scale_fit_survives_noisy_regressed_values() -> None:
+    # Regression guard: a scale fitted by plain least squares collapses (shrinking s shrinks
+    # every residual, so "everything is class 0" wins).  The regressed values are a probability
+    # distribution over the codes, so the fit must use Σ_x s·v(x) = Σ_x (label+1)².
+    rng = np.random.default_rng(0)
+    codes = np.arange(1, 25, dtype=np.int64)
+    labels = np.array([0, 1, 2] * 8, dtype=np.int64)
+    exact = iris_model.target_distribution(codes, labels)[codes]
+    s_true = float(((labels + 1.0) ** 2).sum())
+    for _ in range(10):
+        noisy = exact * rng.uniform(0.75, 1.25, size=exact.size)  # ±25 %: levels separable
+        noisy /= noisy.sum()
+        np.testing.assert_array_equal(iris_model.labels_from_values(noisy), labels)
+        assert iris_model.fit_level_scale(noisy) == pytest.approx(s_true, rel=0.15)
+
+
 def test_training_smoke_kl_decreases() -> None:
     split = iris_data.load_split(seed=0)
     net = Network(n_inputs=12, n_hidden=2, hidden="prototype")

@@ -56,8 +56,9 @@ DEFAULT_CONFIG = kwsa.KWSAConfig(
 DEFAULT_SUBSAMPLE = 600
 
 # [ASSUMPTION] Number of starting points screened by loss before the sweep begins; see
-# :func:`init_candidates_params`.  256 costs a couple of seconds and removes most of the
-# seed-to-seed spread.
+# :func:`init_candidates_params`.  256 costs a couple of seconds.  It narrows but does not close
+# the seed-to-seed spread — a prototype cell can still land anywhere between 25 and 37 dB — which
+# is why ``table1`` takes the best of several restarts.
 DEFAULT_INIT_CANDIDATES = 256
 
 # [ASSUMPTION] Initialisation.  ``init_candidates`` parameter vectors are screened by loss and
