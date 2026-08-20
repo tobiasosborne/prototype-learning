@@ -9,10 +9,11 @@ license = "MIT"
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]
-plot = ["matplotlib>=3.9"]
 ecg = ["wfdb>=4.1"]
 qiskit = ["qiskit>=1.2", "qiskit-aer>=0.15"]
 gpu = ["cupy-cuda12x>=13"]

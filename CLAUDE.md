@@ -55,6 +55,10 @@ sh scripts/check-all.sh             # all of the above; run before every worklog
   vendor presets), `train`, `tasks`, `hardware`.
 - Every experiment is a script in `experiments/` that writes to `experiments/runs/<name>/`
   with the seed, git hash, and backend in a `meta.json`. Reports in `reports/` cite run dirs.
+- Review rounds are part of every phase, not an afterthought: after a phase goes green, an
+  independent reviewer (Opus subagent and/or Codex) reads the diff against `PLAN.md` and the
+  paper pins for correctness, API design, test adequacy and readability; findings are filed in
+  `reviews/NNN-<phase>.md`, fixed or explicitly declined there, then the phase is closed.
 - Subagents: Opus/Sonnet only (no Fable). Codex (`gpt-5.6-sol`, xhigh) for blind second
   implementations and adversarial review — see `docs/codex.md`. Subagents report; the main
   session integrates after re-running the tests itself.
