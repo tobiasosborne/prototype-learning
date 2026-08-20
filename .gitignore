@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+literature/pdf/        # copyrighted PDFs stay local (ground-truth distillations live in docs/physics/)
+literature/*.txt
+data/raw/
+experiments/runs/
+*.egg-info/
+dist/
+literature/figs/
+literature/snn-figs/

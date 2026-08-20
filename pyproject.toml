@@ -1,0 +1,53 @@
+[project]
+name = "ptqnn"
+version = "0.1.0"
+description = "Prototype quantum neural networks (Rosenhahn & Hirche) with realistic noise: reproduction, hardened simulator, hardware path"
+readme = "README.md"
+authors = [{ name = "Tobias J. Osborne", email = "tobias.osborne@itp.uni-hannover.de" }]
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.9"]
+ecg = ["wfdb>=4.1"]
+qiskit = ["qiskit>=1.2", "qiskit-aer>=0.15"]
+gpu = ["cupy-cuda12x>=13"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "scipy-stubs>=1.14",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: long-running (deselect with -m 'not slow')",
+    "orkan: requires liborkan.so",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "W", "SIM", "RUF"]
+ignore = ["E741", "N803", "N806", "RUF001", "RUF002", "RUF003"]  # math-style names and Unicode math in docstrings are the norm here
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+ignore_missing_imports = true
