@@ -12,7 +12,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | P3 KW-SA + bit-count | done (discrepancy) | superposition: median KL<0.005 at sweep 9 (paper ~8); iterative baseline stalls at KL≈0.15 after 200 its (paper ≈0 by 120) — open |
 | P4 orkan + trajectories + GPU | in progress | ffi done (12q CRX 20 ms); trajectories done; cupy backends written, CUDA headers installing; orkan Backend adapter agent running |
 | P5 Iris | in progress | agent running |
-| P6 Flappy Bird | in progress | agent running; encoding switched to 2·asin(√s) |
+| P6 Flappy Bird | done | perfect play (110 pipes = cap) on 20/20 held-out seeds; run 20260820T142739Z |
 | P7 ECG | in progress | agent running; encoding switched to 2·asin(√s) |
 | P8 noise library + vendor presets | done (review pending) | channels, NoiseModel (ASAP idle scheduling), Aer cross-check, 7 sourced device TOMLs |
 | P9 noisy experiments | not started | |
@@ -29,7 +29,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | Fig 6 iterative KL | ≈0 by ~120 iters | ≈0.15 at 200 | discrepancy (our iterative scheme is an assumption) |
 | Fig 7 Iris loss curves | prototype generalises | — | running |
 | Iris accuracy | ≈98 % | — | running |
-| Flappy Bird | perfect play | — | running |
+| Flappy Bird | perfect play | 110/110 pipes, 20/20 seeds | reproduced (own clone) |
 | Table I ECG PSNR (1/2/3 proto) | 32.9 / 40.00 / 40.04 | — | running |
 
 ## Open decisions / assumptions
