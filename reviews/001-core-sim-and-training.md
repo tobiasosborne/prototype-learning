@@ -404,3 +404,21 @@ code. Findings 2 and 3 are latent but cheap to fix while `ir.py` has exactly two
 
 Suggested order: 1, 4, 8 (correctness of the record) → 5, 6 (before more backends exist) → 2, 3,
 11 → 12 (tests) → the rest.
+
+---
+
+## Resolution (main session, 2026-08-20)
+
+| # | Decision | Where |
+|---|---|---|
+| 1 | Fixed: `train_superposition` always threads `seed` into the optimiser config. | `bitcount.py`, `test_seed_controls_the_whole_run` |
+| 2 | Fixed: `_as_complex` copies and sets `writeable=False`; factories no longer alias constants. | `ir.py`, `test_gate_matrices_are_private_and_read_only` |
+| 3 | Fixed: `Gate`/`Channel` define value `__eq__`/`__hash__` (`eq=False` dataclasses). | `ir.py`, `test_gate_equality_and_hash` |
+| 4 | Fixed: `KWSAResult` contract documented — `params/loss` = best, `final_*` = accepted state, `history` = accepted trajectory, `best_history` = running min; `train_iterative` resumes from the accepted state and returns the same shape. | `kwsa.py`, `bitcount.py`, `test_kwsa_result_contract_best_vs_final` |
+| 5 | Declined for now: every planned experiment is ≤ 17 qubits (Iris: 12 in + 4 hidden + 1), i.e. ≤ 1 MiB per call; executors returning counts are a separate `Executor` protocol (P10). Revisit if Iris grows beyond 20 qubits. | — |
+| 6 | Fixed the dominant term: factory gates skip the unitarity witness (`_trusted`), `unitary()`/direct `Gate(...)` still verify. KL eval 5.1 ms → 3.7 ms under the same load; circuit rebuild per call kept (simplicity) — parametrised circuits are a follow-up if training budgets demand it. | `ir.py` |
+| 7 | Accepted: noisy runs use the orkan (C, OpenMP) and CuPy (RTX 3090) density-matrix backends and the trajectory backend; the numpy DM backend stays the ≤ 9-qubit oracle. | `backends/orkan.py` (in progress), `backends/gpu.py` |
+| 8 | Fixed wording: one iteration = one coordinate sweep = `3·n_params` evaluations; Fig 6 is reported in sweeps *and* evaluations; the `mode="full"` claim replaced by what was measured. | `kwsa.py` docstring, reports |
+| 9 | Fixed: dead network → zero vector → KL penalty ≈ 27.6 instead of KL(target‖uniform). | `distribution.py`, `test_dead_network_is_penalised` |
+| 10 | Fixed: `kl_divergence` validates shape, finiteness, normalisation. | `losses.py`, `test_kl_rejects_garbage` |
+| 11–14 | Minor/nit: deferred to the next round (tracked here). | — |

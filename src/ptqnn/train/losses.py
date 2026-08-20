@@ -19,7 +19,14 @@ def kl_divergence(target: Real, model: Real, eps: float = 1e-12) -> float:
     when the model assigns zero mass to a target outcome (``[ASSUMPTION]``: the paper does not
     say how it regularises)."""
     p = np.asarray(target, dtype=np.float64)
-    q = np.maximum(np.asarray(model, dtype=np.float64), eps)
+    q0 = np.asarray(model, dtype=np.float64)
+    if p.shape != q0.shape:
+        raise ValueError("target and model must have the same shape")
+    if not (np.all(np.isfinite(p)) and np.all(np.isfinite(q0))):
+        raise ValueError("distributions must be finite")
+    if p.min() < 0 or q0.min() < -eps or not np.isclose(p.sum(), 1.0, atol=1e-6):
+        raise ValueError("target must be a probability vector and model non-negative")
+    q = np.maximum(q0, eps)
     mask = p > 0
     return float(np.sum(p[mask] * np.log(p[mask] / q[mask])))
 

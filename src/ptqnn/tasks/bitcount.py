@@ -102,8 +102,9 @@ def train_superposition(
     config: kwsa.KWSAConfig | None = None,
 ) -> kwsa.KWSAResult:
     cfg = config or SUPERPOSITION_CONFIG
-    if iterations is not None:
-        cfg = kwsa.KWSAConfig(**{**cfg.__dict__, "iterations": iterations, "seed": seed})
+    cfg = kwsa.KWSAConfig(
+        **{**cfg.__dict__, "iterations": iterations or cfg.iterations, "seed": seed}
+    )
     x0 = net.random_params(np.random.default_rng(seed))
     return kwsa.minimise(kl_loss(net, backend), x0, cfg)
 
@@ -122,15 +123,29 @@ def train_iterative(
     monitor = kl_loss(net, backend)
     x = net.random_params(rng)
     history = [monitor(x)]
+    best_x, best_f, best_history = x.copy(), history[0], [history[0]]
     evaluations = 1
     for n in range(iterations):
         sample = int(rng.integers(2**net.n_inputs))
         step_cfg = kwsa.KWSAConfig(
             **{**cfg.__dict__, "iterations": 1, "seed": int(rng.integers(2**31))}
         )
-        # one KW step at the schedule position n (so a_n, c_n decay as in the superposition run)
+        # one KW sweep on this sample at schedule position n (a_n, c_n decay as in the
+        # superposition run); continue from the annealer's accepted state, not its best.
         res = kwsa.minimise(sample_loss(net, sample, backend), x, step_cfg, start_iteration=n)
-        x = res.params
+        x = res.final_params if res.final_params is not None else res.params
         evaluations += res.evaluations
-        history.append(monitor(x))
-    return kwsa.KWSAResult(params=x, loss=history[-1], history=history, evaluations=evaluations)
+        kl = monitor(x)
+        history.append(kl)
+        if kl < best_f:
+            best_x, best_f = x.copy(), kl
+        best_history.append(best_f)
+    return kwsa.KWSAResult(
+        params=best_x,
+        loss=best_f,
+        history=history,
+        evaluations=evaluations,
+        final_params=x,
+        final_loss=history[-1],
+        best_history=best_history,
+    )

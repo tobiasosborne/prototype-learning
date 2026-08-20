@@ -102,3 +102,20 @@ def test_circuit_initial_state_validated_and_used() -> None:
         ir.Circuit(2, initial_state=np.array([1, 1, 0, 0]))
     with pytest.raises(ValueError, match="dimension"):
         ir.Circuit(2, initial_state=np.array([1, 0]))
+
+
+def test_gate_matrices_are_private_and_read_only() -> None:
+    g = ir.h(0)
+    assert g.matrix is not ir._H
+    with pytest.raises(ValueError):
+        g.matrix[0, 0] = 5.0
+    ir.h(1)  # factory still healthy
+
+
+def test_gate_equality_and_hash() -> None:
+    assert ir.crx(0, 1, 0.3) == ir.crx(0, 1, 0.3)
+    assert ir.crx(0, 1, 0.3) != ir.crx(1, 0, 0.3)
+    assert hash(ir.rx(0, 0.1)) == hash(ir.rx(0, 0.1))
+    assert len({ir.h(0), ir.h(0), ir.h(1)}) == 2
+    k = [np.eye(2)]
+    assert ir.Channel((0,), k, "id") == ir.Channel((0,), k, "id")

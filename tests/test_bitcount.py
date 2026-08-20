@@ -74,3 +74,17 @@ def test_kl_loss_uses_target_first() -> None:
         losses.kl_divergence(bitcount.target_distribution(3), q)
     )
     assert isinstance(kwsa.KWSAConfig(), kwsa.KWSAConfig)
+
+
+def test_seed_controls_the_whole_run() -> None:
+    net = bitcount.network(n_bits=3, n_hidden=1)
+    a = bitcount.train_superposition(net, seed=1, iterations=2)
+    b = bitcount.train_superposition(net, seed=1, iterations=2)
+    c = bitcount.train_superposition(net, seed=2, iterations=2)
+    assert a.history == b.history
+    assert a.history != c.history
+
+
+def test_dead_network_is_penalised() -> None:
+    net = bitcount.network(n_bits=2, n_hidden=1)
+    assert bitcount.kl_loss(net)(np.zeros(net.n_params)) > 20

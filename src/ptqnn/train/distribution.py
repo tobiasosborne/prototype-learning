@@ -40,7 +40,10 @@ def conditioned_input_distribution(
     joint = joint_input_output(net, params, prep, backend)[:, 1]
     z = joint.sum()
     if z <= 0:
-        return np.full(joint.shape, 1.0 / joint.size)
+        # A network that never fires has no model distribution.  Return all zeros so that the
+        # eps-floored KL becomes the large finite penalty log(1/eps) ≈ 27.6 rather than the
+        # misleadingly moderate KL(target ‖ uniform) (reviews/001 #9).
+        return np.zeros_like(joint)
     return joint / z
 
 

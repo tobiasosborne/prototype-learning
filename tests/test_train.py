@@ -91,3 +91,29 @@ def test_backends_expose_probabilities_protocol() -> None:
     np.testing.assert_allclose(sv.probabilities(circ), [0.5, 0, 0, 0.5], atol=1e-14)
     np.testing.assert_allclose(dm.probabilities(circ), [0.5, 0, 0, 0.5], atol=1e-14)
     assert sv.name == "numpy-statevector"
+
+
+def test_kwsa_result_contract_best_vs_final() -> None:
+    # Hot annealing can end on an uphill state: params/loss are the best seen, final_* the
+    # accepted state, history the accepted trajectory, best_history its running minimum.
+    def f(x: np.ndarray) -> float:
+        return float(np.sum(x**2))
+
+    res = kwsa.minimise(
+        f,
+        np.ones(2),
+        kwsa.KWSAConfig(iterations=50, t0=5.0, cooling=0.99, jitter=1.0, seed=2, mode="full"),
+    )
+    assert res.loss == pytest.approx(f(res.params))
+    assert res.final_params is not None
+    assert res.final_loss == pytest.approx(f(res.final_params))
+    assert res.history[-1] == pytest.approx(res.final_loss)
+    assert res.best_history[-1] == pytest.approx(res.loss)
+    assert all(a >= b for a, b in zip(res.best_history, res.best_history[1:], strict=False))
+
+
+def test_kl_rejects_garbage() -> None:
+    with pytest.raises(ValueError):
+        losses.kl_divergence(np.array([0.5, 0.6]), np.array([0.5, 0.5]))
+    with pytest.raises(ValueError):
+        losses.kl_divergence(np.array([1.0, 0.0]), np.array([np.nan, 1.0]))

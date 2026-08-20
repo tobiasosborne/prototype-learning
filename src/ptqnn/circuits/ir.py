@@ -33,10 +33,13 @@ _ATOL = 1e-10
 
 
 def _as_complex(m: npt.ArrayLike) -> Complex:
-    return np.ascontiguousarray(np.asarray(m, dtype=np.complex128))
+    """A private, read-only complex128 copy — ops never alias caller arrays or module constants."""
+    out = np.array(m, dtype=np.complex128, order="C", copy=True)
+    out.setflags(write=False)
+    return out
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Gate:
     """A unitary acting on ``qubits``; ``matrix`` is ``2^k × 2^k`` in the order of ``qubits``."""
 
@@ -57,6 +60,18 @@ class Gate:
         if not np.allclose(m.conj().T @ m, np.eye(2**k), atol=_ATOL):
             raise ValueError(f"matrix for gate {self.name!r} is not unitary")
 
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, Gate)
+            and self.qubits == other.qubits
+            and self.name == other.name
+            and self.params == other.params
+            and np.array_equal(self.matrix, other.matrix)
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.qubits, self.name, self.params))
+
     @property
     def n_qubits(self) -> int:
         return len(self.qubits)
@@ -70,7 +85,7 @@ class Gate:
         return Gate(self.qubits, self.matrix.conj().T, self.name + ("" if params else "†"), params)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Channel:
     """A CPTP map ``ρ ↦ Σ_i K_i ρ K_i†`` on ``qubits``.  Each ``K_i`` is ``2^k × 2^k``."""
 
@@ -93,6 +108,18 @@ class Channel:
         if not np.allclose(s, np.eye(d), atol=_ATOL):
             raise ValueError(f"Kraus set for {self.name!r} is not trace preserving (Σ K†K ≠ I)")
 
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, Channel)
+            and self.qubits == other.qubits
+            and self.name == other.name
+            and len(self.kraus) == len(other.kraus)
+            and all(np.array_equal(a, b) for a, b in zip(self.kraus, other.kraus, strict=True))
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.qubits, self.name, len(self.kraus)))
+
     @property
     def n_qubits(self) -> int:
         return len(self.qubits)
@@ -107,6 +134,22 @@ Op = Gate | Channel
 # --- gate factories -------------------------------------------------------------------------
 
 
+def _trusted(
+    qubits: tuple[int, ...], matrix: Complex, name: str, params: tuple[float, ...]
+) -> Gate:
+    """Construct a ``Gate`` whose unitarity is a theorem (rotations, Paulis, ``controlled`` of
+    those) without the ``O(8^k)`` witness check — it was 55 % of a training loss evaluation
+    (``reviews/001`` #6).  ``unitary()`` and direct ``Gate(...)`` calls still verify."""
+    if len(set(qubits)) != len(qubits):
+        raise ValueError(f"qubits must be distinct, got {qubits}")
+    g = Gate.__new__(Gate)
+    object.__setattr__(g, "qubits", qubits)
+    object.__setattr__(g, "matrix", _as_complex(matrix))
+    object.__setattr__(g, "name", name)
+    object.__setattr__(g, "params", params)
+    return g
+
+
 def _rot(axis: str, theta: float) -> Complex:
     c, s = np.cos(theta / 2), np.sin(theta / 2)
     if axis == "x":
@@ -118,15 +161,15 @@ def _rot(axis: str, theta: float) -> Complex:
 
 def rx(q: int, theta: float) -> Gate:
     """``RX(θ) = exp(-iθX/2)``; ``P(1) = sin²(θ/2)`` on ``|0⟩`` ``[SNN §III]``."""
-    return Gate((q,), _rot("x", theta), "rx", (float(theta),))
+    return _trusted((q,), _rot("x", theta), "rx", (float(theta),))
 
 
 def ry(q: int, theta: float) -> Gate:
-    return Gate((q,), _rot("y", theta), "ry", (float(theta),))
+    return _trusted((q,), _rot("y", theta), "ry", (float(theta),))
 
 
 def rz(q: int, theta: float) -> Gate:
-    return Gate((q,), _rot("z", theta), "rz", (float(theta),))
+    return _trusted((q,), _rot("z", theta), "rz", (float(theta),))
 
 
 _H = np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2)
@@ -137,19 +180,19 @@ _Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
 def h(q: int) -> Gate:
     """Hadamard — "used to encode all possible input states in superposition" ``[PTQNN Fig 5]``."""
-    return Gate((q,), _H, "h")
+    return _trusted((q,), _H, "h", ())
 
 
 def x(q: int) -> Gate:
-    return Gate((q,), _X, "x")
+    return _trusted((q,), _X, "x", ())
 
 
 def y(q: int) -> Gate:
-    return Gate((q,), _Y, "y")
+    return _trusted((q,), _Y, "y", ())
 
 
 def z(q: int) -> Gate:
-    return Gate((q,), _Z, "z")
+    return _trusted((q,), _Z, "z", ())
 
 
 def controlled(u: Complex) -> Complex:
@@ -164,13 +207,13 @@ def crx(control: int, target: int, theta: float) -> Gate:
     """Controlled ``RX(θ)``: the perceptron's synapse ``[PTQNN Fig 1, Fig 2]``."""
     if control == target:
         raise ValueError("control and target must be distinct")
-    return Gate((control, target), controlled(_rot("x", theta)), "crx", (float(theta),))
+    return _trusted((control, target), controlled(_rot("x", theta)), "crx", (float(theta),))
 
 
 def cx(control: int, target: int) -> Gate:
     if control == target:
         raise ValueError("control and target must be distinct")
-    return Gate((control, target), controlled(_X), "cx")
+    return _trusted((control, target), controlled(_X), "cx", ())
 
 
 def unitary(qubits: Sequence[int], matrix: npt.ArrayLike, name: str = "u") -> Gate:

@@ -16,8 +16,11 @@ Neither paper publishes ``a_n``, ``c_n``, ``T_t`` or ``k``.  ``[ASSUMPTION]`` �
 * ``mode="coordinate"`` (default): one *iteration* is a sweep over all coordinates in random
   order; for each coordinate the central difference ``±c_n`` is evaluated, the KW step
   ``x_i − a_n ĝ_i`` is proposed, and the best of the three probes is put to the Metropolis rule.
-  Empirically this reproduces the "≈0 in under 10 iterations" of ``[PTQNN Fig 6]``; whole-vector
-  KW steps (``mode="full"``) need O(100) iterations on the same loss.
+  One such iteration costs ``3·n_params`` loss evaluations (108 for the Fig-5 network); with it
+  the bit-count KL reaches ≈1e-3 in ~10 sweeps ≈ 1000 evaluations.  The paper's "iteration" unit
+  is not defined, so Fig 6 is reported against both sweeps and ``evaluations``
+  (``reviews/001`` #8).  Whole-vector KW steps (``mode="full"``) stalled near KL ≈ 1e-2 at every
+  setting tried, even at 7000+ evaluations.
 * ``mode="full"``: the candidate is ``x̂ = x − a_n ĝ + jitter·T·N(0, 1)``, a descent step on the
   full central-difference gradient plus optional Gaussian exploration.
 * geometric cooling ``T_{t+1} = cooling · T_t`` from ``t0``; ``k`` is the damping factor of Eq 3.
@@ -56,11 +59,18 @@ class KWSAConfig:
 
 @dataclass
 class KWSAResult:
+    """``params``/``loss`` are the best point seen (use these); ``final_params``/``final_loss``
+    are the annealer's last accepted state (resume from these); ``history[i]`` is the accepted
+    loss after iteration ``i`` (``history[0]`` = start) and ``best_history`` its running minimum."""
+
     params: Params
     loss: float
     history: list[float] = field(default_factory=list)
     accepted: int = 0
     evaluations: int = 0
+    final_params: Params | None = None
+    final_loss: float = float("nan")
+    best_history: list[float] = field(default_factory=list)
 
 
 def accept(delta: float, temperature: float, k: float, rng: np.random.Generator) -> bool:
@@ -95,7 +105,7 @@ def minimise(
     x = np.asarray(x0, dtype=np.float64).copy()
     fx = f(x)
     best_x, best_f = x.copy(), fx
-    res = KWSAResult(params=x, loss=fx, history=[fx], evaluations=1)
+    res = KWSAResult(params=x, loss=fx, history=[fx], evaluations=1, best_history=[fx])
     temperature = cfg.t0 * cfg.cooling**start_iteration
     for n in range(start_iteration, start_iteration + cfg.iterations):
         a_n = cfg.a0 / (n + 1) ** cfg.alpha
@@ -130,7 +140,9 @@ def minimise(
                     best_x, best_f = x.copy(), fx
         temperature *= cfg.cooling
         res.history.append(fx)
+        res.best_history.append(best_f)
         if callback is not None:
             callback(n, x, fx)
     res.params, res.loss = best_x, best_f
+    res.final_params, res.final_loss = x, fx
     return res
