@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 ecg = ["wfdb>=4.1"]
 qiskit = ["qiskit>=1.2", "qiskit-aer>=0.15"]
-gpu = ["cupy-cuda12x>=13"]
+gpu = ["cupy-cuda12x[ctk]>=13"]
 
 [dependency-groups]
 dev = [

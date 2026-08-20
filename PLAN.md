@@ -25,7 +25,7 @@ Ground truth pins are `[paper §/Fig]` = QPrototypeLearning-5, `[SNN §/Fig]` = 
 
 Under-specified (we must choose, document, and ablate):
 - KW/SA hyper-parameters (a_n, c_n, T schedule, k) — not given in either paper.
-- Real-valued → angle encoding for Flappy/ECG: Fig 12 shows RX(0.54, 0.78, 0.52, 0.70, 0.78) for signal values ≈0.17–0.25 → consistent with θ = π·s. Default: θ = π·s; ablate θ = 2·asin(√s).
+- Real-valued → angle encoding for Flappy/ECG: **resolved** — SNN Fig 4 prints CRX(1.369)=[0.4], CRX(1.7722)=[0.6], i.e. θ = 2·asin(√s) (P(1) = s) [docs/physics/rosenhahn_osborne_hirche_snn.md §3.3]. Fig 12's printed angles are from a different window than the shaded one and cannot decide it. Default: θ = 2·asin(√s); ablate θ = π·s.
 - ECG source and noise: Fig 13 shows a smooth ~2-beat waveform in [0,1], 1800 samples, noise σ≈0.03–0.04. We will use a PhysioNet/MIT-BIH record (if offline-available) and a synthetic ECG fallback, additive Gaussian noise; report both.
 - Flappy Bird: reward/episode protocol, how "training" was done (SA on episode score), observation discretisation, physics constants. We build our own deterministic headless clone (pygame-free) and document.
 - Iris: state preparation of the dataset superposition; we use exact amplitude-encoding (Möttönen) in simulation and also an explicit statevector initialisation (equivalent in the noiseless case).

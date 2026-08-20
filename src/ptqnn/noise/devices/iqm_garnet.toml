@@ -1,0 +1,155 @@
+# IQM Garnet — 20-qubit superconducting transmon "Crystal" square lattice with
+# 30 tunable couplers. Available on AWS Braket.
+#
+# Gate and readout numbers are IQM's own (AWS Braket partner page + IQM's Garnet
+# paper). IQM publishes NO T1/T2; those two come from a third-party calibration
+# snapshot and are flagged as such.
+
+[device]
+name = "iqm_garnet"
+vendor = "IQM"
+technology = "superconducting transmon with tunable couplers (IQM Crystal 20)"
+n_qubits = 20
+topology = "square"
+native_1q = ["prx"]
+native_2q = ["cz"]
+retrieved_at = 2026-08-20
+
+[noise]
+t1_us = {median = 27.42}
+t2_us = {median = 21.05, kind = "echo"}
+gate_1q = {error_median = 8.0e-04}
+gate_2q = {error_median = 4.9e-03, duration_ns = 30.0}
+readout = {error_median = 3.0e-02}
+notes = """
+CONVERSIONS. gate_1q.error_median = 1 - 0.9992 and gate_2q.error_median = 1 - 0.9951, from IQM's \
+published median gate FIDELITIES on the AWS Braket partner page. IQM's own Garnet paper \
+independently quotes the errors directly as "median single qubit gate error of 9 x 10-4, \
+CZ error of 5 x 10-3" -- agreement to the rounding, so confidence is high on both.
+gate_2q.duration_ns = 30 is the MIDPOINT of a published RANGE, not a measured value: IQM states \
+"a fast gate with a typical duration of 20 ns - 40 ns". Sweep 20-40 ns if it matters.
+OMITTED: gate_1q.duration_ns. No Garnet-specific number is published. The closest vendor figure \
+is from IQM's Radiance 20-qubit spec sheet (a sibling product on the same Crystal-20 QPU, NOT \
+Garnet), which gives only an upper bound: "Single-qubit gate (PRX) duration -- Minimum: <= 60 ns / \
+Typical: <= 40 ns". A bound is not a value, so it is not recorded as one.
+T1 AND T2 ARE THIRD-PARTY, NOT VENDOR. IQM publishes no T1/T2 for Garnet; its own paper says only \
+that it aims "to improve relaxation time T1 from the order of 40 us to above 100 us". The values \
+here are the median column of one published Garnet calibration snapshot (arXiv:2512.23009 Table 3), \
+chosen because T1 and T2-echo come from the SAME table and are therefore mutually consistent. \
+That same table's PRX 99.86% / CZ 99.40% / readout fidelity 97.29% medians are close to the vendor \
+numbers, which supports the snapshot's provenance.
+SPREAD ACROSS SOURCES, all median Garnet values, different epochs: T1 27.42 us (Dec 2025 snapshot) \
+vs 36.53 us (Mar 2026); T2 Ramsey 8.43 us (Dec 2025) vs 8.61 us (Mar 2026) vs T2 echo 21.05 us \
+(Dec 2025). NOTE T2-Ramsey is ~2.5x SHORTER than T2-echo on this device -- if your noise model \
+wants a pure-dephasing rate without echo, use ~8.5 us, not 21 us.
+readout.error_median = 3.0e-2 is IQM's own median for SIMULTANEOUS readout of the whole QPU (worse \
+than isolated readout). Corroborated by 2.89%/2.81% on two days in a third-party run and by a \
+median readout fidelity of 97.29%. p01/p10 are not published separately; omitted.
+OMITTED, not published: readout.duration_ns, idle.zz_coupling_khz.
+For scale-up: IQM Emerald (54 qubits, same square lattice) has vendor medians 99.93% 1q and 99.5% \
+2q, and third-party medians T1 50.05 us / T2-Ramsey 15.75 us -- i.e. better than Garnet.
+"""
+
+[[provenance]]
+field = "device.n_qubits, device.topology"
+value = [20, "square"]
+source_url = "https://aws.amazon.com/braket/quantum-computers/iqm/"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "IQM Garnet contains 20 computational transmon qubits and 30 tunable coupler qubits and a square lattice topology enabling high connectivity."
+
+[[provenance]]
+field = "device.topology (Crystal lattice naming)"
+value = "square"
+source_url = "https://docs.aws.amazon.com/braket/latest/developerguide/braket-qpu-partner-iqm.html"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "The IQM Garnet is a 20-qubit device, while IQM Emerald is a 54-qubit device. Both these devices use a square lattice topology, also known as a Crystal lattice topology."
+
+[[provenance]]
+field = "device.native_1q, device.native_2q"
+value = ["prx", "cz"]
+source_url = "https://aws.amazon.com/braket/quantum-computers/iqm/"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "The system is calibrated to support arbitrary X and Y rotations as the native single-qubit gate and CZ as the native two-qubit gate."
+
+[[provenance]]
+field = "noise.gate_1q.error_median (converted: 1 - 0.9992)"
+value = 8.0e-04
+source_url = "https://aws.amazon.com/braket/quantum-computers/iqm/"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "With IQM Garnet, we achieve median 1-qubit gate fidelity of 99.92% and median 2-qubit gate fidelity of 99.51%"
+
+[[provenance]]
+field = "noise.gate_2q.error_median (converted: 1 - 0.9951)"
+value = 4.9e-03
+source_url = "https://aws.amazon.com/braket/quantum-computers/iqm/"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "we have demonstrated a median two-qubit (CZ) gate fidelity of 99.51% across 30 qubit pairs, with maximum fidelity over a single pair reaching as high as 99.8%."
+
+[[provenance]]
+field = "noise.gate_1q.error_median, noise.gate_2q.error_median (independent, as errors, no conversion)"
+value = [9.0e-04, 5.0e-03]
+source_url = "https://arxiv.org/abs/2408.12433"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "obtain median single qubit gate error of 9 x 10-4 , CZ error of 5 x 10-3 and two qubit Clifford error of 2 x 10-2"
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns (midpoint of a published 20-40 ns range)"
+value = 30.0
+source_url = "https://arxiv.org/abs/2408.12433"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The CZ-gate is implemented by applying a magnetic flux pulse on the coupler, resulting in a fast gate with a typical duration of 20 ns - 40 ns."
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns (vendor corroboration of the same range)"
+value = "20 ns - 40 ns"
+source_url = "https://aws.amazon.com/braket/quantum-computers/iqm/"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "enabling full idling of interaction, minimizing errors and enabling fast gates (20 ns - 40 ns)."
+
+[[provenance]]
+field = "noise.readout.error_median"
+value = 3.0e-02
+source_url = "https://arxiv.org/abs/2408.12433"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "We observe median readout error for simultaneous QPU readout to be 3 x 10-2 ."
+
+[[provenance]]
+field = "noise.t1_us.median, noise.t2_us.median (THIRD-PARTY calibration snapshot, not vendor)"
+value = [27.42, 21.05]
+source_url = "https://arxiv.org/pdf/2512.23009"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Representative hardware characteristics of the IQM Garnet superconducting quantum processor. Reported values correspond to calibration data closest to the experimental execution time. ... T2 (Echo) [us] 20.63 21.05 ... Single-qubit readout fidelity [%] 97.12 97.29  [columns are average, median; T1 29.49/27.42 us; T2 Ramsey 8.68/8.43 us; PRX 99.82/99.86 %; CZ 99.01/99.40 %]"
+
+[[provenance]]
+field = "noise.notes (second third-party median set, different epoch)"
+value = [36.53, 8.61]
+source_url = "https://arxiv.org/pdf/2603.28486"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "TABLE I: Median values of the T1 relaxation time, T2 coherence time (Ramsey), PRX gate fidelity, and CZ gate fidelity for the IQM Garnet and IQM Emerald devices ... Garnet 36.53 us 8.61 us 99.91 % 99.37 % ... Emerald 50.05 us 15.75 us 99.94 % 99.45 %"
+
+[[provenance]]
+field = "noise.notes (IQM's own statement that T1 is order 40 us, no median published)"
+value = "order of 40 us"
+source_url = "https://arxiv.org/abs/2408.12433"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "aim to improve relaxation time T1 from the order of 40 us to above 100 us which we have already demonstrated"
+
+[[provenance]]
+field = "noise.notes (gate-duration bounds from the sibling Radiance 20-qubit spec sheet, NOT Garnet)"
+value = "PRX <= 40 ns typical, CZ <= 60 ns typical, readout fidelity >= 97.0 % typical"
+source_url = "https://www.iqm.tech/products/iqm-radiance/"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "Median single-qubit gate (PRX) fidelity - Minimum: >= 99.7% / Typical: >= 99.9% ... Median two-qubit gate (CZ) fidelity - Minimum: >= 99.0% / Typical: >= 99.3% ... Single-qubit gate (PRX) duration - Minimum: <= 60 ns / Typical: <= 40 ns ... Two-qubit gate (CZ) duration - Minimum: <= 100 ns / Typical: <= 60 ns ... Median readout fidelity - Minimum: >= 95.0% / Typical: >= 97.0%"

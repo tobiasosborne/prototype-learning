@@ -1,0 +1,168 @@
+# Google Willow — 105-qubit superconducting transmon processor (the QEC chip of
+# Nature 638, 920-926 (2025), "Quantum error correction below the surface code threshold").
+#
+# NOT publicly accessible hardware. Included as a best-in-class reference point.
+#
+# IMPORTANT: every number below is a MEAN over qubits/pairs, not a median. The paper's
+# Supplementary Table S5 reports "mean values and the uncertainties indicate one standard
+# deviation from the mean value". The schema field names say `median`; they hold means here.
+# The only medians Google published for this work are the median physical-qubit lifetime
+# (85 +/- 7 us, over one distance-7 patch) and a median CZ Pauli error 2.6e-3 for the
+# *72-qubit* chip. Neither is used below.
+
+[device]
+name = "google_willow"
+vendor = "Google Quantum AI"
+technology = "superconducting transmon, tunable couplers (Willow, 105-qubit QEC chip)"
+n_qubits = 105
+topology = "square"
+native_1q = ["xy_microwave", "virtual_z"]
+native_2q = ["cz"]
+retrieved_at = 2026-08-20
+
+[noise]
+t1_us = {median = 68.0}
+t2_us = {median = 89.0, kind = "cpmg"}
+gate_1q = {error_median = 5.3e-04, duration_ns = 25.0}
+gate_2q = {error_median = 4.1e-03, duration_ns = 42.0}
+readout = {error_median = 8.0e-03}
+notes = """
+ALL `*_median` VALUES ARE MEANS, NOT MEDIANS (Supplementary Table S5 reports mean +/- 1 s.d.). \
+Standard deviations, which are large: T1 68 +/- 13 us; T2,cpmg 89 +/- 28 us; 1q 5.3e-4 +/- 4.3e-4; \
+CZ 4.1e-3 +/- 2.2e-3; readout 0.8e-2 +/- 0.2e-2. The 1q error s.d. is ~80% of the mean, so a \
+homogeneous-noise model built from these means is a coarse approximation.
+gate_2q.error_median 4.1e-3 is the TOTAL CZ error INCLUDING CZ crosstalk (~3.3e-4) and CZ leakage \
+(2.0e-4); do not add those on top. Errors are Pauli errors from XEB/RB, not 1 - fidelity of a \
+process-fidelity measurement, so no conversion was applied.
+readout.error_median = 0.8e-2 exactly as tabulated. Google's separate Willow Spec Sheet gives \
+0.77% +/- 0.21% for the same chip; the two agree to the tabulated precision.
+OMITTED: readout.duration_ns. Not published as a number anywhere in the paper, SI, spec sheet or \
+blog; it appears only as a per-qubit heat map (Fig. S7f, "Length of the applied readout tone on \
+each readout resonator"), which is a figure read-off, not a spec. Reset duration likewise not \
+published. What IS published is the full surface-code cycle time, 1108 ns.
+OMITTED: readout p01/p10. Only a symmetric readout error is tabulated.
+OMITTED: idle.zz_coupling_khz. Google reports a CZ crosstalk *error* (~3.3e-4 per CZ) and a data-qubit \
+idle error during measure+reset ((0.8 +/- 0.3)e-2), not a ZZ coupling rate in Hz.
+Note there is a SECOND Willow chip (the random-circuit-sampling "Chip 2") with different numbers \
+(T1 mean 98 us +/- 32 us, iswap-like 2q error 0.14%). Do not mix them; this file is the QEC chip.
+"""
+
+[[provenance]]
+field = "device.n_qubits"
+value = 105
+source_url = "https://quantumai.google/static/site-assets/downloads/willow-spec-sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "Number of qubits    105"
+
+[[provenance]]
+field = "device.topology"
+value = "square"
+source_url = "https://www.nature.com/articles/s41586-024-08449-y"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "It features a square grid of superconducting transmon qubits with improved operational fidelities compared with our previously reported Sycamore processors."
+
+[[provenance]]
+field = "device.native_1q"
+value = ["xy_microwave", "virtual_z"]
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Single-qubit gates are implemented using microwave XY rotations and virtual Z rotations."
+
+[[provenance]]
+field = "device.native_2q"
+value = ["cz"]
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "We implement our entangling operations using CZ gates, as is further described in Section II C. ... In this work, we employ diabatic CZ gates"
+
+[[provenance]]
+field = "noise.t1_us.median"
+value = 68.0
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "TABLE S5. Qubit and gate error metrics for the 105-qubit processor. We report mean values and the uncertainties indicate one standard deviation from the mean value. ... T1  (68 +/- 13) us"
+
+[[provenance]]
+field = "noise.t2_us.median"
+value = 89.0
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "T2, cpmg  (89 +/- 28) us"
+
+[[provenance]]
+field = "noise.t2_us.kind"
+value = "cpmg"
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "e, Qubit dephasing at the operating frequency as measured with CPMG echoing (T2,CPMG)."
+
+[[provenance]]
+field = "noise.gate_1q.error_median"
+value = 5.3e-04
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Single-qubit gates  (5.3 +/- 4.3) x 10-4"
+
+[[provenance]]
+field = "noise.gate_1q.duration_ns"
+value = 25.0
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "On the 105-qubit processor, all XY rotations have 25 ns duration, while on the 72-qubit processor, pi and pi/2 rotations have 35 ns duration and 18 ns duration respectively."
+
+[[provenance]]
+field = "noise.gate_2q.error_median"
+value = 4.1e-03
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "CZ gates (incl. CZ crosstalk & CZ leakage)  (4.1 +/- 2.2) x 10-3 [total error]"
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns"
+value = 42.0
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Our CZ gates are performed in 42 ns on the 105-qubit processor and 37 ns on the 72-qubit processor."
+
+[[provenance]]
+field = "noise.readout.error_median"
+value = 8.0e-03
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Readout  (0.8 +/- 0.2) x 10-2"
+
+[[provenance]]
+field = "noise.notes (corroboration of T1 mean)"
+value = 68.0
+source_url = "https://www.nature.com/articles/s41586-024-08449-y"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The qubits have a mean coherence time T1 of 68 us and T2,CPMG of 89 us"
+
+[[provenance]]
+field = "noise.notes (surface-code cycle time, in lieu of a readout duration)"
+value = 1108.0
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Cycle time  1108 ns"
+
+[[provenance]]
+field = "noise.notes (CZ crosstalk and leakage already folded into gate_2q)"
+value = "crosstalk 3.3e-4, leakage 2.0e-4"
+source_url = "https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-024-08449-y/MediaObjects/41586_2024_8449_MOESM1_ESM.pdf"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "CZ crosstalk  ~= 3.3 x 10-4 ... CZ leakage probability  2.0 x 10-4"

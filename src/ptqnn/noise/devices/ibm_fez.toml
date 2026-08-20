@@ -1,0 +1,237 @@
+# IBM Fez (ibm_fez) — Heron r2, 156 transmons, heavy-hex.
+#
+# EPOCH: this file is ONE coherent calibration snapshot, ibm_fez backend version
+# 1.2.8, last_update_date 2025-02-26T15:16:25-05:00, as shipped by IBM inside
+# qiskit-ibm-runtime's fake_provider (props_fez.json / conf_fez.json). IBM publishes
+# the PER-QUBIT and PER-EDGE table there; the medians below were computed by us from
+# that table with statistics.median (n = 156 qubits, n = 352 directed CZ edges) and
+# re-verified locally. Do not mix them with numbers from another date or device --
+# see notes for how much fez itself drifted between July 2024 and February 2025.
+
+[device]
+name = "ibm_fez"
+vendor = "IBM"
+technology = "superconducting fixed-frequency transmon with tunable couplers (Heron r2)"
+n_qubits = 156
+topology = "heavy-hex"
+native_1q = ["rz", "sx", "x", "id"]
+native_2q = ["cz"]
+retrieved_at = 2026-08-20
+
+[noise]
+t2_us = {median = 87.951, kind = "echo", per_qubit = [
+  42.380, 302.791, 99.985, 215.544, 161.932, 208.674, 129.324, 48.096, 43.305, 53.876, 117.648,
+  74.636, 74.037, 204.582, 45.893, 146.241, 114.594, 99.758, 68.301, 120.742, 114.669, 180.911,
+  74.242, 122.787, 93.675, 123.120, 95.950, 130.535, 131.288, 54.411, 109.557, 70.167, 96.957,
+  76.633, 61.747, 48.141, 117.543, 187.834, 154.816, 65.203, 109.819, 140.152, 38.609, 77.588,
+  158.727, 186.063, 11.018, 79.858, 22.667, 20.213, 130.892, 119.783, 58.534, 20.794, 149.288,
+  174.183, 193.714, 65.721, 37.845, 173.303, 29.972, 70.810, 33.571, 10.407, 73.920, 98.242,
+  16.453, 74.667, 79.638, 67.868, 85.681, 143.905, 100.384, 64.380, 127.274, 136.907, 67.554,
+  53.058, 46.580, 50.998, 147.829, 20.318, 34.256, 186.441, 102.918, 22.437, 83.899, 56.839,
+  109.010, 86.099, 93.390, 16.603, 80.881, 62.125, 7.110, 39.667, 88.570, 123.267, 20.610, 17.280,
+  29.236, 22.152, 115.454, 118.748, 97.318, 132.310, 157.348, 23.115, 111.015, 80.016, 128.278,
+  68.475, 19.670, 23.136, 48.125, 103.357, 183.439, 93.028, 57.389, 59.126, 41.928, 130.711,
+  71.528, 113.430, 102.557, 49.174, 51.953, 117.880, 48.333, 93.186, 129.835, 201.476, 161.633,
+  47.946, 22.679, 92.453, 93.601, 145.742, 135.763, 43.354, 27.238, 91.446, 144.825, 122.509,
+  111.678, 137.789, 23.687, 87.332, 113.512, 6.644, 5.986, 105.219, 103.080, 47.300, 115.152,
+  19.210
+]}
+t1_us = {median = 144.855, per_qubit = [
+  48.806, 255.705, 274.394, 219.720, 190.897, 190.004, 213.896, 139.668, 74.724, 247.018, 168.710,
+  101.843, 83.691, 262.286, 225.327, 233.013, 155.888, 179.731, 157.337, 184.448, 218.493,
+  237.237, 119.438, 174.759, 69.563, 134.447, 127.362, 105.082, 235.858, 166.021, 176.740,
+  148.603, 102.342, 145.508, 93.653, 175.038, 152.868, 221.861, 127.407, 154.464, 179.784,
+  224.732, 160.783, 137.354, 136.799, 179.777, 171.029, 151.673, 88.969, 108.808, 145.481,
+  134.516, 100.962, 151.428, 165.042, 144.230, 168.821, 107.755, 200.201, 163.708, 115.890,
+  185.148, 190.515, 96.585, 129.568, 135.466, 98.624, 118.792, 110.867, 142.927, 120.374, 206.132,
+  112.588, 123.696, 135.704, 144.014, 101.383, 176.753, 85.545, 107.520, 132.397, 222.090,
+  108.739, 212.607, 113.320, 149.635, 117.853, 27.149, 114.850, 175.277, 94.486, 143.357, 118.947,
+  202.472, 121.150, 163.403, 140.493, 107.077, 114.730, 117.482, 154.337, 48.441, 195.642,
+  146.759, 123.392, 156.133, 151.134, 112.535, 165.290, 108.512, 169.711, 95.765, 156.425,
+  147.816, 121.459, 153.933, 169.910, 177.143, 146.690, 83.994, 105.887, 208.931, 143.601,
+  155.405, 100.682, 165.793, 108.611, 120.032, 88.327, 145.563, 117.284, 141.181, 136.989,
+  195.260, 151.300, 179.623, 95.621, 130.245, 113.324, 142.409, 95.641, 168.243, 166.044, 149.858,
+  97.756, 152.510, 63.055, 146.228, 92.355, 73.170, 66.928, 110.200, 176.046, 170.701, 151.275,
+  197.475
+]}
+gate_1q = {error_median = 2.28688e-04, duration_ns = 24.0}
+gate_2q = {error_median = 3.90338e-03, duration_ns = 84.0}
+readout = {error_median = 7.56836e-03, p01 = 3.90625e-03, p10 = 1.14746e-02, duration_ns = 1560.0}
+notes = """
+per_qubit arrays are indexed by physical qubit 0..155 and are IBM's own per-qubit values from \
+the same snapshot; the median fields are their medians. Spread is large: T1 27.15-274.39 us, \
+T2 5.99-302.79 us, readout error 1.46e-3 to 1.06e-1. A single-median homogeneous noise model \
+throws that away -- prefer per_qubit where the backend supports it.
+t2_us.kind = "echo" is stated by IBM: "T_2 is reported from a Hahn echo sequence."
+gate_1q.error_median is the SX error. IBM measures SX, X and ID in one randomized-benchmarking \
+sequence "and it is assumed their errors are the same", and indeed id/x/rx/sx all carry the \
+identical 2.28688e-4 median in this snapshot. RZ is virtual: gate_error 0, gate_length 0.
+gate_2q.error_median is the median over all 352 DIRECTED CZ edges (176 undirected). IBM's \
+definition includes a layer of single-qubit Cliffords: "this randomized benchmarking uses \
+alternating layers of single-qubit Cliffords and two-qubit gates, and thus the final 2Q error \
+value includes the error of the layer of single-qubit Cliffords." So it slightly OVERSTATES the \
+bare CZ error. Measured in isolation, so it EXCLUDES crosstalk from simultaneous gates.
+gate_2q.duration_ns = 84 is the median; 348 of 352 edges are 84 ns and 4 are 104 ns.
+readout p01 = prob_meas1_prep0 = P(read 1 | prepared 0) = 3.90625e-3 median; \
+p10 = prob_meas0_prep1 = P(read 0 | prepared 1) = 1.14746e-2 median. Note the strong asymmetry \
+(3x): |1> decays toward |0> during the 1560 ns readout. IBM defines its readout_error as the \
+mean of the two, and (3.90625e-3 + 1.14746e-2)/2 = 7.69e-3, close to but not identical with the \
+median-of-means 7.56836e-3 recorded here -- medians do not commute with averaging.
+OMITTED, not published: idle.zz_coupling_khz. IBM publishes no residual-ZZ number for Heron, \
+only the qualitative claim that tunable couplers "virtually eliminate cross-talk". ZZ figures \
+circulating for other tunable-coupler devices must not be attributed to Heron. Qubit frequencies \
+and anharmonicities are also absent (the snapshot's hamiltonian field is empty).
+DRIFT / CROSS-CHECK. IBM's live public dashboard (quantum.cloud.ibm.com/computers, undated) \
+currently reports for ibm_fez: median 2Q error 2.6108678e-3, best 2Q edge 1.499287e-3 on (9,10), \
+EPLG_100 4.5436798e-3, median readout error 7.9956055e-3 -- i.e. CZ has improved ~1.5x since \
+this snapshot while readout is unchanged. An independent published table for ibm_fez as of \
+2024-07-04 gives median T1 136.52 us, T2 78.58 us, SX error 2.88e-4, CZ error 2.848e-3 at 68 ns, \
+readout assignment error 1.63e-2. Coherence and gate time are strongly epoch-dependent; always \
+carry the date. Other Heron r2/r3 snapshots differ more: ibm_kingston (r2, Apr 2026) has median \
+T1 282.8 us, T2 144.2 us, SX 32 ns, CZ 68 ns, readout 2280 ns.
+Layer fidelity itself is not published, only EPLG_100 = (4/5)(1 - LF^(1/99)).
+"""
+
+[[provenance]]
+field = "device.n_qubits"
+value = 156
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/processor-types"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "r2 (July 2024) This is a revision of the original Heron processor. The chip has been redesigned to include 156 qubits in a heavy-hexagonal lattice. While continuing to make use of the innovations of the original Heron processors, it also introduces a new TLS mitigation feature that controls the TLS environment of the chip, thereby improving coherence and stability across the whole chip."
+
+[[provenance]]
+field = "device.topology"
+value = "heavy-hex"
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/conf_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "coupling_map: 352 directed entries = 176 undirected edges over 156 qubits, degree histogram {2: 100, 3: 48, 1: 8} -- the heavy-hexagonal signature."
+
+[[provenance]]
+field = "device.native_1q, device.native_2q"
+value = ["cz", "id", "rz", "sx", "x"]
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/conf_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '"basis_gates": ["cz", "id", "rz", "sx", "x"]'
+
+[[provenance]]
+field = "device.technology"
+value = "Heron r2"
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/conf_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '"processor_type": {"family": "Heron", "revision": 2}, "online_date": "2024-05-14T04:00:00+00:00"'
+
+[[provenance]]
+field = "snapshot epoch"
+value = "2025-02-26T15:16:25-05:00"
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '"backend_name": "ibm_fez", "backend_version": "1.2.8", "last_update_date": "2025-02-26T15:16:25-05:00"'
+
+[[provenance]]
+field = "noise.t1_us.median (derived: median of the 156 published per-qubit T1 values)"
+value = 144.855
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '{"date": "2025-02-26T06:56:41-05:00", "name": "T1", "unit": "us", "value": 48.806207822303335}  -- first of 156 such per-qubit rows; statistics.median over all 156 = 144.85526609546145'
+
+[[provenance]]
+field = "noise.t2_us.median (derived: median of the 156 published per-qubit T2 values)"
+value = 87.951
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '{"date": "2025-02-26T06:56:50-05:00", "name": "T2", "unit": "us", "value": 42.37959748613206}  -- first of 156 such per-qubit rows; statistics.median over all 156 = 87.95068681159161'
+
+[[provenance]]
+field = "noise.t2_us.kind"
+value = "echo"
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/qpu-information"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "$T_2$ is reported from a Hahn echo sequence."
+
+[[provenance]]
+field = "noise.gate_1q.error_median, noise.gate_1q.duration_ns"
+value = [2.28688e-04, 24.0]
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '{"qubits": [0], "gate": "sx", "parameters": [{"date": "2025-02-24T04:40:29-05:00", "name": "gate_error", "unit": "", "value": 0.0007640689403641555}, {"date": "2025-02-24T04:40:29-05:00", "name": "gate_length", "unit": "ns", "value": 24}], "name": "sx0"}  -- first of 156 such rows; median gate_error over all 156 = 0.000228688, gate_length = 24 ns on every qubit'
+
+[[provenance]]
+field = "noise.gate_1q.error_median (IBM definition: SX = X = ID assumed equal)"
+value = 2.28688e-04
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/qpu-information"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "Error in the finite-duration discrete one-qubit gates, measured from randomized benchmarking. The randomized benchmarking sequence includes SX, ID, and X gates, and it is assumed their errors are the same."
+
+[[provenance]]
+field = "noise.gate_2q.error_median, noise.gate_2q.duration_ns"
+value = [3.90338e-03, 84.0]
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '{"qubits": [0, 1], "gate": "cz", "parameters": [{"date": "2025-02-24T06:11:12-05:00", "name": "gate_error", "unit": "", "value": 0.0101566715843735}, {"date": "2025-02-24T06:11:12-05:00", "name": "gate_length", "unit": "ns", "value": 84}], "name": "cz0_1"}  -- first of 352 directed-edge rows; median gate_error = 0.00390338, min 0.00213891; gate_length 84 ns on 348 edges and 104 ns on 4'
+
+[[provenance]]
+field = "noise.gate_2q.error_median (IBM definition: isolated RB, includes a 1q Clifford layer)"
+value = 3.90338e-03
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/qpu-information"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "Average gate fidelity of the two-qubit operation from randomized benchmarking. Measured in \"isolation\": batches with a minimum separation of two qubits between edges. This randomized benchmarking uses alternating layers of single-qubit Cliffords and two-qubit gates, and thus the final 2Q error value includes the error of the layer of single-qubit Cliffords."
+
+[[provenance]]
+field = "noise.readout.error_median, p01, p10, duration_ns"
+value = [7.56836e-03, 3.90625e-03, 1.14746e-02, 1560.0]
+source_url = "https://raw.githubusercontent.com/Qiskit/qiskit-ibm-runtime/main/qiskit_ibm_runtime/fake_provider/backends/fez/props_fez.json"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '[{"date": "2025-02-24T07:48:10-05:00", "name": "readout_error", "unit": "", "value": 0.011474609375}, {"date": "2025-02-24T07:48:02-05:00", "name": "prob_meas0_prep1", "unit": "", "value": 0.017578125}, {"date": "2025-02-24T07:48:06-05:00", "name": "prob_meas1_prep0", "unit": "", "value": 0.00537109375}, {"date": "2025-02-24T07:48:10-05:00", "name": "readout_length", "unit": "ns", "value": 1560}]  -- qubit 0 of 156; medians over all 156: readout_error 0.00756836, prob_meas1_prep0 0.00390625, prob_meas0_prep1 0.0114746, readout_length 1560 ns on every qubit'
+
+[[provenance]]
+field = "noise.readout (IBM definition of readout error and readout length)"
+value = "mean of prob_meas0_prep1 and prob_meas1_prep0"
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/qpu-information"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "The readout error quantifies the average probability of incorrectly measuring a qubit's state. It is commonly calculated as the mean of prob_meas0_prep1 and prob_meas1_prep0 ... The readout length specifies the duration of the readout operation for a qubit. It measures the time from the initiation of the measurement pulse to the completion of signal digitization"
+
+[[provenance]]
+field = "noise.notes (live-dashboard cross-check: median 2Q, EPLG_100, median readout)"
+value = [2.6108678e-03, 4.5436798e-03, 7.9956055e-03]
+source_url = "https://quantum.cloud.ibm.com/computers"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '"name":"ibm_fez", "qubits":156, "physical_qubits":332, "processor_type":{"family":"Heron","revision":"2"}, "performance_metrics":{"two_q_error_best":{"gate":"cz","qubits":[9,10],"unit":"","value":0.001499287},"two_q_error_layered":{"unit":"","value":0.0045436798},"two_q_error_median":{"unit":"","value":0.0026108678},"readout_error_median":{"unit":"","value":0.0079956055}}'
+
+[[provenance]]
+field = "noise.notes (EPLG definition)"
+value = "EPLG_100 = (4/5)(1 - LF^(1/99))"
+source_url = "https://quantum.cloud.ibm.com/docs/en/guides/qpu-information"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "2Q error (layered) -- Average error per layered gate (EPLG) in a chain of 100 qubits... EPLG$_{100}$ = 4/5(1-LF$^{\\frac{1}{99}}$) and layer fidelity is the process fidelity of the layered chain of $N$ qubits. For details, see the paper Benchmarking quantum processor performance at scale. Note that in the paper EPLG is defined for process error, but for consistency with the individually reported gate errors here it is quoted for average gate error, thus the factor of 4/5."
+
+[[provenance]]
+field = "noise.notes (independent published medians for ibm_fez as of 2024-07-04)"
+value = [136.523081, 78.580919, 2.88e-04, 2.848e-03, 68.0, 1.63e-02]
+source_url = "https://arxiv.org/abs/2410.00916"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "As of July 4, 2024, the system demonstrates a median CZ error of 2.848 x 10-3 , and a median gate time of 68 ns. ... T1 (mus) 137.558138 47.587586 13.834783 106.863088 136.523081 162.444316 271.626108 ... T2 (mus) 82.612083 46.241133 4.583184 52.180838 78.580919 111.299718 268.217025 ... Readout assignment error 0.024617 0.033318 0.003100 0.008325 0.016300 0.032025 0.363200 ... Readout length (ns) 1560 0.0 1560 1560 1560 1560 1560 ... The sqrt(X) (SX) error 0.000443 0.000589 0.000129 0.000232 0.000288 0.000398 0.005070"
+
+[[provenance]]
+field = "noise.notes (no published ZZ crosstalk for Heron; qualitative claim only)"
+value = "not published"
+source_url = "https://www.ibm.com/quantum/blog/quantum-roadmap-2033"
+source_kind = "news"
+retrieved_at = 2026-08-20
+quote = "Featuring 133 fixed-frequency qubits with tunable couplers, Heron yields a 3-5x improvement in device performance over our previous flagship 127-qubit Eagle processors, and virtually eliminates cross-talk."

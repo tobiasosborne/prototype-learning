@@ -1,0 +1,100 @@
+# Rigetti Ankaa-3 — 84-qubit superconducting square lattice with tunable couplers.
+#
+# THIS IS THE THINNEST FILE IN THE SET, DELIBERATELY. Rigetti publishes only
+# two-qubit gate fidelities and gate times for Ankaa-3. T1, T2, single-qubit
+# fidelity, readout error and readout duration are NOT public anywhere -- they
+# live behind the QCS / Braket calibration APIs. They are left out rather than
+# guessed. Do not fill them from Novera or Cepheus numbers; different device.
+
+[device]
+name = "rigetti_ankaa_3"
+vendor = "Rigetti"
+technology = "superconducting transmon with tunable couplers, multi-chip module (Ankaa class)"
+n_qubits = 84
+topology = "square"
+native_1q = ["rx", "rz"]
+native_2q = ["iswap"]
+retrieved_at = 2026-08-20
+
+[noise]
+gate_2q = {error_median = 1.0e-02, duration_ns = 72.0}
+notes = """
+gate_2q is the UNIVERSAL native gate, iSWAP: error_median = 1 - 0.990 from Rigetti's published \
+"median 99.0% iSWAP gate fidelity", duration 72 ns from "a median gate time of 72 nanoseconds".
+BEWARE THE HEADLINE NUMBER. Rigetti's press-release title and its one-line claim -- "Ankaa-3 has \
+achieved a 99.5% median two-qubit gate fidelity" -- refer to the SPECIALIZED fSim gate \
+(median 99.5%, median 56 ns), not to the universal iSWAP. Using 5.0e-3 as a general-purpose \
+two-qubit error for this device would be optimistic by a factor of 2. If you specifically model \
+fSim-decomposed circuits, use error 5.0e-3 / 56 ns instead and say so.
+native_1q: Braket's verbatim-compilation set for Ankaa-3 is rx, rz, iswap, and RX is restricted -- \
+"Rigetti superconducting quantum processors can run the 'rx' gate with only the angles of +/-pi/2 \
+or +/-pi." So arbitrary single-qubit rotations cost 2-3 physical pulses plus virtual RZ, which \
+matters for any depth or error estimate built from gate_1q.
+OMITTED, not published anywhere public: t1_us, t2_us, gate_1q (error and duration), \
+readout (error, p01, p10, duration), idle.zz_coupling_khz. Rigetti's Ankaa-3 announcement makes \
+only a qualitative coherence claim -- "Rigetti implemented a metal deposition method for qubit \
+circuitry with a higher T1 baseline - which indicates the lifetime of a qubit" -- with no number. \
+docs.rigetti.com serves no static spec content and qcs.rigetti.com/qpus requires sign-in. \
+TO FILL THESE IN you must pull live calibration from the Braket GetDevice API or QCS with \
+credentials; see this directory's README.
+DO NOT SUBSTITUTE: figures circulating for Rigetti Novera (9-qubit, Ankaa-class) -- median T1 \
+~45 us, T2-echo ~38 us, 99.93% 1q, ~95% readout -- are a different, much smaller device and were \
+not confirmable on a primary page. Cepheus-1-36Q (Aug 2025) is a later system again.
+Braket limit: 20,000 gates per circuit.
+"""
+
+[[provenance]]
+field = "device.n_qubits"
+value = 84
+source_url = "https://docs.aws.amazon.com/braket/latest/developerguide/braket-qpu-partner-iqm.html"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "The Ankaa-3 system is an 84-qubit device that utilizes scalable multi-chip technology. ... The Ankaa-3 device has a maximum limit of 20,000 gates per circuit."
+
+[[provenance]]
+field = "device.native_1q, device.native_2q"
+value = ["rx", "rz", "iswap"]
+source_url = "https://docs.aws.amazon.com/braket/latest/developerguide/braket-qpu-partner-iqm.html"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "With verbatim compilation, Ankaa-3 supports the following native gates. 'rx', 'rz', 'iswap' ... Rigetti superconducting quantum processors can run the 'rx' gate with only the angles of +/-pi/2 or +/-pi."
+
+[[provenance]]
+field = "device.topology"
+value = "square"
+source_url = "https://thequantuminsider.com/2024/12/23/rigetti-computing-launches-84-qubit-ankaa-3-system-achieves-99-5-median-two-qubit-gate-fidelity-milestone/"
+source_kind = "news"
+retrieved_at = 2026-08-20
+quote = "The Ankaa-3 chip features the hallmarks of Rigetti's Ankaa-class chip architecture with a square lattice of qubits and tunable couplers."
+
+[[provenance]]
+field = "noise.gate_2q.error_median (converted: 1 - 0.990, iSWAP)"
+value = 1.0e-02
+source_url = "https://thequantuminsider.com/2024/12/23/rigetti-computing-launches-84-qubit-ankaa-3-system-achieves-99-5-median-two-qubit-gate-fidelity-milestone/"
+source_kind = "news"
+retrieved_at = 2026-08-20
+quote = "successfully halving error rates in 2024 to achieve a median 99.0% iSWAP gate fidelity, as well as demonstrating 99.5% median fidelity fSim gates."
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns (iSWAP)"
+value = 72.0
+source_url = "https://thequantuminsider.com/2024/12/23/rigetti-computing-launches-84-qubit-ankaa-3-system-achieves-99-5-median-two-qubit-gate-fidelity-milestone/"
+source_kind = "news"
+retrieved_at = 2026-08-20
+quote = "Users will be able to operate these higher fidelity and universal iSWAP gates for a wide range of algorithmic research, with a median gate time of 72 nanoseconds. The faster (median 56 nanoseconds), more specialized fSim gates are useful for specific algorithms such as random circuit sampling"
+
+[[provenance]]
+field = "noise.notes (the 99.5% headline is fSim, not the universal gate)"
+value = 5.0e-03
+source_url = "https://www.rigetti.com/news/rigetti-computing-launches-84-qubit-ankaa-3-system-achieves-99-5-median-two-qubit-gate-fidelity-milestone"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "Ankaa-3 has achieved a 99.5% median two-qubit gate fidelity."
+
+[[provenance]]
+field = "noise.notes (no T1 number published)"
+value = "not published"
+source_url = "https://thequantuminsider.com/2024/12/23/rigetti-computing-launches-84-qubit-ankaa-3-system-achieves-99-5-median-two-qubit-gate-fidelity-milestone/"
+source_kind = "news"
+retrieved_at = 2026-08-20
+quote = "Rigetti implemented a metal deposition method for qubit circuitry with a higher T1 baseline - which indicates the lifetime of a qubit."

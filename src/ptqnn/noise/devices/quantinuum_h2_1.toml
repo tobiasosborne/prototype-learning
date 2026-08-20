@@ -1,0 +1,132 @@
+# Quantinuum H2-1 — trapped-ion QCCD, 56 qubits, all-to-all.
+#
+# Numbers are the per-machine values from Quantinuum's live "Performance Validation"
+# page (latest randomized-benchmarking sweep), cross-checked against the H2 Product
+# Data Sheet v4.00 (2025-09-17) "Typical" column. Quantinuum publishes ZONE-AVERAGED
+# mean infidelities, not medians, and publishes no T1/T2 and no per-gate durations.
+
+[device]
+name = "quantinuum_h2_1"
+vendor = "Quantinuum"
+technology = "trapped ion, 171Yb+ hyperfine qubits, QCCD race-track trap (System Model H2)"
+n_qubits = 56
+topology = "all-to-all"
+native_1q = ["U1q", "Rz"]
+native_2q = ["ZZ", "RZZ", "SU4"]
+retrieved_at = 2026-08-20
+
+[noise]
+gate_1q = {error_median = 1.9e-05}
+gate_2q = {error_median = 1.1e-03}
+readout = {error_median = 1.0e-03, p01 = 6.0e-04, p10 = 1.4e-03}
+notes = """
+error_median fields hold Quantinuum's ZONE-AVERAGED MEAN infidelity, not a median: \
+the vendor states "The typical infidelities reported on this product data sheet are an \
+average over all operational zones." Treat them as means.
+readout.error_median = 1.0e-3 is our arithmetic mean of the two published SPAM numbers, \
+(6.0e-4 + 1.4e-3)/2; only the two directional numbers are vendor-published. \
+p01 = SPAM Error (0) = P(read 1 | prepared 0); p10 = SPAM Error (1) = P(read 0 | prepared 1), \
+per the vendor definition "preparing the qubits in the |0> (or |1> state) and measuring to \
+determine the fraction of time the incorrect |1> (or |0>) state is returned".
+OMITTED, not published: t1_us, t2_us. Trapped-ion memory decay is reported instead as \
+"Memory Error per Depth-1 Circuit Time" = 2.0e-04 +/- 2.3e-05 (H2-1, Performance Validation), \
+data-sheet typical 2 x 10^-4 / max 2 x 10^-3. This is an idling+transport dephasing probability \
+per depth-1 circuit time, NOT a T1 or T2, and there is no published depth-1 time in seconds, so \
+it cannot be converted; use it directly as a per-idle-layer Z-error probability if needed.
+OMITTED, not published: gate durations. Neither data sheet nor the H2 paper gives a 1Q/2Q/readout \
+gate time. The H2 paper only gives whole-shot budgets, e.g. a 32-qubit GHZ circuit shot time of \
+0.18 s with 2%/64%/34% of it in quantum ops / transport / cooling, plus "about 17 ms/shot" \
+state-prep+cooling overhead. Do not infer a gate duration from these.
+Also published but not modelled here: 2-Qubit Gate Leakage Error 1.4e-04 +/- 2.1e-05, \
+1-Qubit Gate Leakage Error 4.8e-06 +/- 1.5e-06, Measurement Crosstalk Error 6.6e-06 +/- 9.0e-07.
+The data sheet "Typical" column (v4.00, 2025-09-17) is looser than the measured sweep: \
+1Q 3e-5, 2Q 1e-3, SPAM 1e-3, memory 2e-4.
+"""
+
+[[provenance]]
+field = "device.n_qubits"
+value = 56
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H2%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "N >= 56 qubit trapped-ion based quantum computers"
+
+[[provenance]]
+field = "device.topology"
+value = "all-to-all"
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H2%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "Connectivity  All-to-all"
+
+[[provenance]]
+field = "device.native_2q"
+value = ["ZZ", "RZZ", "SU4"]
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H2%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "Native gate set: single-qubit rotations, two-qubit ZZ gates, parameterized-angle ZZ gates, general SU(4) entangler"
+
+[[provenance]]
+field = "device.technology"
+value = "trapped ion, 171Yb+ hyperfine qubits, QCCD race-track trap (System Model H2)"
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H2%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "The Quantinuum System Model H2, Powered by Honeywell, operates on qubits implemented through atomic hyperfine states of 171Yb+. System Model H2 has 56 physical qubits (ions) that move, individually or in pairs, between four interaction zones"
+
+[[provenance]]
+field = "noise.gate_1q.error_median"
+value = 1.9e-05
+source_url = "https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/performance_validation.html"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "H2-1 | Infidelity | Uncertainty ... 1-Qubit Gate Error | 1.9e-05 | 4.2e-06"
+
+[[provenance]]
+field = "noise.gate_2q.error_median"
+value = 1.1e-03
+source_url = "https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/performance_validation.html"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "H2-1 | Infidelity | Uncertainty ... 2-Qubit Gate Error | 1.1e-03 | 8.1e-05"
+
+[[provenance]]
+field = "noise.readout.p01"
+value = 6.0e-04
+source_url = "https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/performance_validation.html"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "H2-1 ... SPAM Error (0) | 6.0e-04 | 8.2e-05"
+
+[[provenance]]
+field = "noise.readout.p10"
+value = 1.4e-03
+source_url = "https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/performance_validation.html"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "H2-1 ... SPAM Error (1) | 1.4e-03 | 1.2e-04"
+
+[[provenance]]
+field = "noise.readout.error_median"
+value = 1.0e-03
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H2%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "State preparation and measurement (SPAM) error | 1 x 10-3 (Typical) | 5 x 10-3 (Max)"
+
+[[provenance]]
+field = "noise.notes (memory error, in lieu of T1/T2)"
+value = 2.0e-04
+source_url = "https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/performance_validation.html"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = "The reported Memory Error per Depth-1 Time captures the idling error of qubits during a random transport. ... H2-1 ... Memory Error per Depth-1 Circuit Time | 2.0e-04 | 2.3e-05"
+
+[[provenance]]
+field = "noise.notes (no published gate durations; shot-time budget only)"
+value = "GHZ, 32 qubits: shot time 0.18 s, 2/64/34 % quantum ops/transport/cooling"
+source_url = "https://arxiv.org/abs/2305.03828"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "TABLE I. Example circuit resource estimates. Circuit time budgets are estimated from compiler information and broken into quantum ops. (e.g., 1Q and 2Q gates and SPAM), transport (e.g., physical swaps and shifts), and cooling (sideband cooling before 2Q gates). Shot time does not include overheads such as postchecks of ion crystal configurations, but does include the overhead for state preparation and initial cooling of about 17 ms/shot for a 32-qubit circuit."

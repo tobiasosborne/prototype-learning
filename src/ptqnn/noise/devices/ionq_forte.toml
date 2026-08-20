@@ -1,0 +1,183 @@
+# IonQ Forte (qpu.forte-1) — 36-qubit trapped-ion (171Yb+) chain, all-to-all.
+#
+# IonQ's live per-qubit characterization endpoint is auth-gated (the public
+# /v0.3/backends listing exposes a characterization_url that returns 403
+# "Insufficient scope"), so everything here comes from IonQ's public spec panel
+# plus two IonQ-(co)authored papers. Forte Enterprise 1 carries an identical
+# public spec panel; where the papers separate them, the difference is noted.
+
+[device]
+name = "ionq_forte"
+vendor = "IonQ"
+technology = "trapped ion, 171Yb+ hyperfine qubits, single linear chain, AOD addressing (Forte)"
+n_qubits = 36
+topology = "all-to-all"
+native_1q = ["gpi", "gpi2"]
+native_2q = ["zz"]
+retrieved_at = 2026-08-20
+
+[noise]
+t1_us = {median = 5.5e7}
+t2_us = {median = 1.0e6, kind = "unspecified"}
+gate_1q = {error_median = 2.0e-04, duration_ns = 1.30e5}
+gate_2q = {error_median = 4.0e-03, duration_ns = 9.5e5}
+readout = {error_median = 5.0e-03}
+notes = """
+T1: IonQ publishes only a RANGE, "10-100s". t1_us.median = 5.5e7 us is the MIDPOINT of that \
+range (55 s), not a measured median. Treat as order-of-magnitude only. Relative to any circuit \
+we will run (ms scale) T1 is effectively infinite.
+T2: IonQ publishes "~1 s" with no measurement protocol stated, hence kind = "unspecified" \
+(not known to be echo or Ramsey). t2_us.median = 1.0e6 us.
+gate_1q.error_median = 2.0e-4 is IonQ's spec panel value (0.02%) and coincides exactly with the \
+median 1q DRB error measured in IonQ's own 30-qubit Forte benchmarking paper (2.0e-4, 10th/90th \
+percentiles 1.8e-4 / 2.6e-4). HIGH confidence.
+gate_2q.error_median = 4.0e-3 is IonQ's spec panel value (0.4%, equivalently the 99.6% 2QG \
+fidelity in IonQ's compare table; error = 1 - fidelity). MEASURED MEDIANS DISAGREE AND ARE WORSE: \
+IonQ's 2023 paper reports a median 2q DRB error of 46.4e-4 = 4.64e-3 on the 30-qubit Forte \
+configuration (10th/90th percentiles 34.5e-4 / 99.6e-4, i.e. a factor ~3 spread over pairs, with \
+seven pairs above 300e-4); an IonQ-coauthored 2025 paper reports median DRB FIDELITY 99.3% on \
+Forte and 99.5% on Forte Enterprise at time of execution, i.e. errors 7.0e-3 and 5.0e-3. \
+So the honest range for the 2q error is 4.0e-3 to 7.0e-3 and the per-pair spread is large. \
+LOW confidence in any single number; sweep it.
+readout.error_median = 5.0e-3 is IonQ's SPAM error (0.5%), which bundles state preparation with \
+measurement. p01/p10 are NOT published separately, so they are omitted rather than guessed.
+Durations are from an IonQ-coauthored 2025 paper ("around 950 microseconds for the two-qubit ZZ \
+gates and around 130 microseconds for single-qubit gates"). IonQ's 2023 paper gives 110 us for 1q \
+on the 30-qubit config and an average ZZ duration of ~900 us with a per-pair range 770-1103 us. \
+RZ is virtual and takes ~no time.
+OMITTED, not published: readout.duration_ns, reset duration, crosstalk. These fields exist in \
+IonQ's API characterization schema but no public page carries values, and the endpoint is 403 \
+without an account. Closest public number is "The laser cooling process takes approximately 3 ms."
+IonQ's documented depolarizing simulator noise model for Forte 1 used r_1q = 2.667e-4 and \
+r_2q = 4.949e-3 -- but only for jobs run BEFORE mid-September 2025; IonQ says the model was \
+replaced and the new parameters are not yet documented. Not used here.
+#AQ 36 for both Forte and Forte Enterprise.
+"""
+
+[[provenance]]
+field = "device.n_qubits"
+value = 36
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "36 | Qubit count | The number of physical qubits in the system. The closer #AQ is to qubit count, the higher quality the qubits in the system."
+
+[[provenance]]
+field = "device.native_1q, device.native_2q"
+value = ["gpi", "gpi2", "zz"]
+source_url = "https://api.ionq.co/v0.3/backends"
+source_kind = "vendor_calibration"
+retrieved_at = 2026-08-20
+quote = '{"backend":"qpu.forte-1","status":"available","degraded":false,"qubits":36,"location":"College Park, MD, USA","supported_native_gates":["gpi","gpi2","zz"]}'
+
+[[provenance]]
+field = "device.topology"
+value = "all-to-all"
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "All-to-all connectivity | Any qubit in the system can be directly entangled with any other qubit."
+
+[[provenance]]
+field = "device.technology"
+value = "trapped ion, 171Yb+ hyperfine qubits"
+source_url = "https://arxiv.org/abs/2506.07866"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "These qubits are realized using trapped Ytterbium ions (171 Yb+ ), with quantum information encoded in their ground state hyperfine levels."
+
+[[provenance]]
+field = "noise.t1_us.median"
+value = 5.5e7
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "10-100s, ~1s | T1 & T2 time | Two factors of the amount of time a qubit 'stays a qubit,' T1 measures how long you can tell what's a one vs a zero, and T2 measures phase coherence."
+
+[[provenance]]
+field = "noise.t2_us.median"
+value = 1.0e6
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "10-100s, ~1s | T1 & T2 time"
+
+[[provenance]]
+field = "noise.gate_1q.error_median"
+value = 2.0e-04
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "0.02% | One-Qubit gate error | This characterization of 1Q gate infidelity is the 1Q randomized benchmarking error rate, as measured by Clifford Randomized Benchmarking and described in this paper. Forte's 1Q gate error is about two parts in ten thousand (0.02%)."
+
+[[provenance]]
+field = "noise.gate_1q.error_median (independent median, corroborating)"
+value = 2.0e-04
+source_url = "https://arxiv.org/abs/2308.05071"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Single-qubit direct randomized benchmarking (DRB) error-rate distributions of Forte. ... The quantiles in (b) are Median: 2.0 x 10-4 ; 10th percentile: 1.8 x 10-4 ; 90th percentile: 2.6 x 10-4 ."
+
+[[provenance]]
+field = "noise.gate_2q.error_median"
+value = 4.0e-03
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "0.4% | 2-Qubit gate error | This characterization of Forte 2Q gates is the randomized benchmarking error rate, as measured by Direct Randomized Benchmarking. Forte's 2Q gate error is about forty parts in ten thousand (0.4%)."
+
+[[provenance]]
+field = "noise.gate_2q.error_median (conflicting measured median, 30-qubit config)"
+value = 4.64e-03
+source_url = "https://arxiv.org/abs/2308.05071"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "Two-qubit error rates of Forte, measured by direct randomized benchmarking. (a) Mean error rates for each qubit pair. Seven pairs saturate the color scale with error rate > 300 x 10-4 (see supplemental data for precise values). (b) Aggregated mean error rates per pair, with Median: 46.4 x 10-4 ; 10th percentile: 34.5 x 10-4 ; 90th percentile: 99.6 x 10-4 , best observed infidelity: 27.8 x 10-4 ."
+
+[[provenance]]
+field = "noise.gate_2q.error_median (conflicting measured median, 2025; error = 1 - fidelity)"
+value = 7.0e-03
+source_url = "https://arxiv.org/abs/2506.07866"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "At the time of execution, the median direct randomized benchmarking (DRB) fidelities for these entangling gates were 99.3% on Forte and 99.5% on Forte Enterprise and around 99.98% for the single qubit rotation gates."
+
+[[provenance]]
+field = "noise.gate_1q.duration_ns"
+value = 1.30e5
+source_url = "https://arxiv.org/abs/2506.07866"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The gate durations were around 950 microseconds for the two-qubit ZZ gates and around 130 microseconds for single-qubit gates."
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns"
+value = 9.5e5
+source_url = "https://arxiv.org/abs/2506.07866"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The gate durations were around 950 microseconds for the two-qubit ZZ gates and around 130 microseconds for single-qubit gates."
+
+[[provenance]]
+field = "noise.gate_2q.duration_ns (earlier, per-pair spread)"
+value = "770-1103 us, average ~900 us"
+source_url = "https://arxiv.org/abs/2308.05071"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The duration of ZZij(chi) depends on the qubit pair we intend to entangle, and the average duration is about 900 us. ... range from 550 to 883 us with a median value of 672 us. This results in ZZ gate durations between 770 and 1103 us."
+
+[[provenance]]
+field = "noise.readout.error_median"
+value = 5.0e-03
+source_url = "https://www.ionq.com/quantum-systems/forte"
+source_kind = "vendor_docs"
+retrieved_at = 2026-08-20
+quote = "0.5% | SPAM error | The average error introduced during state preparation and measurement. Forte's SPAM error is about fifty parts in ten thousand (0.5%), and our new Barium system can do about four in ten thousand."
+
+[[provenance]]
+field = "noise.readout.error_median (corroborating)"
+value = 5.0e-03
+source_url = "https://arxiv.org/abs/2308.05071"
+source_kind = "paper"
+retrieved_at = 2026-08-20
+quote = "The average state preparation and measurement (SPAM) error is measured to be 0.5% on each qubit across the entire ion chain."
