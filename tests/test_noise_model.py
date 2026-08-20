@@ -141,3 +141,8 @@ def test_matches_qiskit_aer_without_idling() -> None:
     res = sim.run(qc).result()
     aer = np.asarray(res.data()["probabilities"])
     np.testing.assert_allclose(ours, aer, atol=1e-9)
+
+
+def test_scaled_zero_is_noiseless() -> None:
+    nm = NoiseModel(one_qubit=ch.depolarizing(0.01, 1), t1_us=100.0, t2_us=50.0)
+    assert nm.scaled(0.0).is_trivial()

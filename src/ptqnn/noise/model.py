@@ -159,6 +159,11 @@ class NoiseModel:
         """Noise strength multiplied by ``factor`` (depolarising ``p``, ``1/T1``, ``1/T2``,
         readout error); used for noise sweeps and zero-noise-extrapolation style studies."""
 
+        if factor < 0:
+            raise ValueError("factor must be non-negative")
+        if factor == 0:
+            return NoiseModel(name=f"{self.name}×0")
+
         def scale_kraus(k: Kraus | None) -> Kraus | None:
             if k is None:
                 return None

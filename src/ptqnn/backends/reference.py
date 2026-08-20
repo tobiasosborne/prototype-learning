@@ -54,23 +54,39 @@ def apply_gate_sv(psi: Complex, gate: Gate, n: int) -> Complex:
     return t.reshape(2**n)
 
 
-def apply_gate_dm(rho: Complex, gate: Gate, n: int) -> Complex:
-    """``ρ ↦ U ρ U†`` via the ket axes then the bra axes (with ``U*``)."""
+def superoperator(kraus: Sequence[Complex]) -> Complex:
+    """``S = Σ_i K_i ⊗ K_i*`` acting on the row-major vectorisation ``vec(X)[a·d + b] = X[a, b]``
+    of the channel's own ``d × d`` block, since ``vec(A X B) = (A ⊗ Bᵀ) vec(X)``."""
+    return sum((np.kron(k, k.conj()) for k in kraus), 0 * np.kron(kraus[0], kraus[0]))
+
+
+def _apply_superop_dm(rho: Complex, s: Complex, qubits: Sequence[int], n: int) -> Complex:
+    """Apply a ``d² × d²`` superoperator to the ket *and* bra axes of ``qubits`` in one matmul.
+
+    The channel's ket axes ``q`` and bra axes ``q + n`` are moved to the front, the tensor is
+    viewed as ``(d², rest)`` and multiplied once — one pass over memory per channel regardless of
+    the number of Kraus operators (``reviews`` P9 finding: per-Kraus ``tensordot`` was ~80× the
+    memory-bound cost at 11 qubits)."""
+    k = len(qubits)
+    d = 2**k
     t = rho.reshape((2,) * (2 * n))
-    t = _apply_matrix_to_axes(t, gate.matrix, gate.qubits, 2 * n)
-    t = _apply_matrix_to_axes(t, gate.matrix.conj(), [q + n for q in gate.qubits], 2 * n)
-    return t.reshape(2**n, 2**n)
+    src = [*qubits, *(q + n for q in qubits)]
+    t = np.moveaxis(t, src, list(range(2 * k)))
+    shape = t.shape
+    out = s @ t.reshape(d * d, -1)
+    out = out.reshape(shape)
+    out = np.moveaxis(out, list(range(2 * k)), src)
+    return out.reshape(2**n, 2**n)
+
+
+def apply_gate_dm(rho: Complex, gate: Gate, n: int) -> Complex:
+    """``ρ ↦ U ρ U†`` as the superoperator ``U ⊗ U*`` on the gate's block."""
+    return _apply_superop_dm(rho, np.kron(gate.matrix, gate.matrix.conj()), gate.qubits, n)
 
 
 def apply_channel(rho: Complex, ch: Channel, n: int) -> Complex:
-    """``ρ ↦ Σ_i K_i ρ K_i†``."""
-    t = rho.reshape((2,) * (2 * n))
-    out = np.zeros_like(t)
-    bra_axes = [q + n for q in ch.qubits]
-    for k in ch.kraus:
-        s = _apply_matrix_to_axes(t, k, ch.qubits, 2 * n)
-        out += _apply_matrix_to_axes(s, k.conj(), bra_axes, 2 * n)
-    return out.reshape(2**n, 2**n)
+    """``ρ ↦ Σ_i K_i ρ K_i†`` via the block superoperator (one matmul)."""
+    return _apply_superop_dm(rho, superoperator(ch.kraus), ch.qubits, n)
 
 
 def apply_op_dm(rho: Complex, op: Op, n: int) -> Complex:
