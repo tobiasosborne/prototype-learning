@@ -83,4 +83,23 @@ Negative result: rotating training seeds per iteration breaks KW–SA because th
 not re-scored (`kwsa.minimise` is built for stationary objectives).  **Reproduced (on our clone).**
 
 ## Fig 12–13, Table I — ECG
-(pending)
+
+Runs `experiments/runs/ecg/20260820T162014` (synthetic, Table I grid), `…T165910` (encoding
+ablation), `…T165912` (PhysioNet MIT-BIH 100).  Architecture as Fig 12: 5-sample window →
+`RX(2·asin(√s))`, 1–3 hidden neurons, classic output, denoised value = `P(out=1)`.  Signal:
+Fig-13-tuned Gaussian PQRST waveform (McSharry form), σ = 0.02 additive noise (noisy input
+32.0 dB), contiguous 50/50 split with guard band; PSNR with R = max−min of the clean signal.
+
+| neurons | CQNN PSNR paper / ours | PTQNN PSNR paper / ours | SSIM paper / ours (windowed) |
+|---|---|---|---|
+| 1 | 32.72 / 36.13 | 32.9 / **37.41** | 0.90, 0.87 / 0.908, 0.961 |
+| 2 | 38.20 / 37.23 | 40.00 / 38.00 | 0.90, 0.93 / 0.934, 0.961 |
+| 3 | 39.65 / 38.44 | 40.04 / 38.10 | 0.92, 0.93 / 0.955, 0.961 |
+
+Within ≈1.6–1.9 dB of Table I at 2–3 neurons, 3–4 dB *above* it at 1 neuron; prototype > classic
+at 1–2 neurons and on every windowed SSIM (the paper's qualitative claim), classic wins at 3.
+Eq 8 taken literally (global statistics) saturates at 0.999 for every model, so the paper's
+0.87–0.93 must be a windowed SSIM.  Encoding ablation: θ = π·s loses 0.6–7.2 dB everywhere.
+MIT-BIH record 100: CQNN 37.5/37.7/37.9, PTQNN 36.2/36.6/36.5 dB (input 33.9).  Fig 13 reproduced
+(`fig13.png`).  **Table I: reproduced to within ~2 dB with ordering partly reproduced; exact
+numbers depend on the unknown recording and noise level.**

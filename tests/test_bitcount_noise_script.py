@@ -159,25 +159,16 @@ def test_finite_shot_kl_rejects_negative_counts() -> None:
         bn.finite_shot_kl([0.5, 0.5], [-1.0, 3.0])
 
 
-# --- scaled_model -------------------------------------------------------------------------------
+# --- module contract the sweep relies on ---------------------------------------------------------
 
 
-def test_scaled_model_zero_is_the_noiseless_limit() -> None:
-    # NoiseModel.scaled(0.0) itself raises ZeroDivisionError (t1_us / factor); the sweep's s = 0
-    # point is the noiseless model.
+def test_noise_model_scaled_zero_is_the_noiseless_limit() -> None:
+    # Study C's s = 0 point is the noiseless model, so the sweep depends on scaled(0) being
+    # trivial rather than raising (it used to raise ZeroDivisionError on t1_us / factor).
     base = presets.device("ibm_fez").noise_model()
-    with pytest.raises(ZeroDivisionError):
-        base.scaled(0.0)
-    assert bn.scaled_model(base, 0.0).is_trivial()
-    assert not bn.scaled_model(base, 1.0).is_trivial()
-
-
-def test_scaled_model_scales_relaxation_and_readout() -> None:
-    base = presets.device("ibm_fez").noise_model()
-    s = bn.scaled_model(base, 2.0)
-    assert s.t1_us == pytest.approx(base.t1_us / 2.0)
-    assert s.readout is not None and base.readout is not None
-    assert s.readout.p01 == pytest.approx(min(1.0, 2.0 * base.readout.p01))
+    assert base.scaled(0.0).is_trivial()
+    assert not base.scaled(1.0).is_trivial()
+    assert base.scaled(2.0).t1_us == pytest.approx(base.t1_us / 2.0)
 
 
 # --- compiled 2q counts -------------------------------------------------------------------------

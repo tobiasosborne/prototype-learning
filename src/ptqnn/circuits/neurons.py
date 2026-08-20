@@ -97,8 +97,8 @@ class Network:
 
     def pack(
         self,
-        hidden: Sequence[tuple[Sequence[float], float]],
-        output: tuple[Sequence[float], float],
+        hidden: Sequence[tuple[Sequence[float] | npt.NDArray[np.float64], float]],
+        output: tuple[Sequence[float] | npt.NDArray[np.float64], float],
     ) -> npt.NDArray[np.float64]:
         flat: list[float] = []
         for angles, last in hidden:

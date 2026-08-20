@@ -13,7 +13,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | P4 orkan + trajectories + GPU | done | orkan DM backend 4.1 s per noisy 11q eval (numpy 148 s); trajectories; CuPy DM + trajectories |
 | P5 Iris | done | acc 95/91/98 %; Fig 7 contrast reproduced; Fig 9 not; target ∝ (label+1)² from Fig 8 |
 | P6 Flappy Bird | done | perfect play (110 pipes = cap) on 20/20 held-out seeds; run 20260820T142739Z |
-| P7 ECG | in progress | agent running; encoding switched to 2·asin(√s) |
+| P7 ECG | done | Table I within ~2 dB; Fig 13 reproduced; runs 20260820T162014/T165910/T165912 |
 | P8 noise library + vendor presets | done (review 2 + Codex review running) | channels, NoiseModel (ASAP idle scheduling), Aer cross-check, 7 sourced device TOMLs |
 | P9 noisy experiments | bit-count done; 11q noise-aware + other tasks running | reports/noise.md; run 20260820T145335Z |
 | P10 hardware layer + plan | layer done; plan report pending | gatesets, decompositions, routing, QASM3, executors; reports/hardware-compile-table.md |
@@ -30,7 +30,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | Fig 7 Iris loss curves | prototype generalises | classic test KL rises, prototype monotone | reproduced |
 | Iris accuracy | ≈98 % | 95/91/98 % (ceiling 97 %) | in range |
 | Flappy Bird | perfect play | 110/110 pipes, 20/20 seeds | reproduced (own clone) |
-| Table I ECG PSNR (1/2/3 proto) | 32.9 / 40.00 / 40.04 | — | running |
+| Table I ECG PSNR (1/2/3 proto) | 32.9 / 40.00 / 40.04 | 37.4 / 38.0 / 38.1 (synthetic) | within ~2 dB |
 
 ## Open decisions / assumptions
 See PLAN.md §0. Resolved today: angle encoding θ = 2·asin(√s) (SNN Fig 4).
