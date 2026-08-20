@@ -31,7 +31,7 @@ With ``t0 = 0`` and ``jitter = 0`` this is plain KW descent with greedy acceptan
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -40,6 +40,7 @@ import numpy.typing as npt
 
 Params = npt.NDArray[np.float64]
 Loss = Callable[[Params], float]
+MapFn = Callable[[Loss, Sequence[Params]], Sequence[float]]
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,11 @@ class KWSAConfig:
     jitter: float = 0.0
     seed: int = 0
     mode: Literal["coordinate", "full"] = "coordinate"
+    restate_incumbent: bool = False
+    """Re-evaluate the incumbent loss at the start of every iteration.  Needed when the objective
+    is non-stationary (mini-batches, rotating episode seeds): a stale incumbent corrupts the
+    Metropolis comparison — observed as 20/25 → 0/25 perfect Flappy games when training seeds
+    were rotated without this flag."""
 
 
 @dataclass
@@ -82,13 +88,20 @@ def accept(delta: float, temperature: float, k: float, rng: np.random.Generator)
     return bool(rng.random() < np.exp(-delta / (k * temperature)))
 
 
-def kw_gradient(f: Loss, x: Params, c: float) -> tuple[Params, int]:
-    """Central-difference gradient, one ``±c`` pair per coordinate; returns (ĝ, #evaluations)."""
-    g = np.zeros_like(x)
+def _serial_map(f: Loss, xs: Sequence[Params]) -> Sequence[float]:
+    return [f(x) for x in xs]
+
+
+def kw_gradient(f: Loss, x: Params, c: float, map_fn: MapFn = _serial_map) -> tuple[Params, int]:
+    """Central-difference gradient, one ``±c`` pair per coordinate; returns (ĝ, #evaluations).
+    The ``2n`` probes are independent and go through ``map_fn`` (e.g. a process pool)."""
+    probes: list[Params] = []
     for i in range(x.size):
         e = np.zeros_like(x)
         e[i] = c
-        g[i] = (f(x + e) - f(x - e)) / (2 * c)
+        probes += [x + e, x - e]
+    vals = np.asarray(map_fn(f, probes), dtype=np.float64)
+    g = (vals[0::2] - vals[1::2]) / (2 * c)
     return g, 2 * x.size
 
 
@@ -98,6 +111,7 @@ def minimise(
     cfg: KWSAConfig,
     callback: Callable[[int, Params, float], None] | None = None,
     start_iteration: int = 0,
+    map_fn: MapFn = _serial_map,
 ) -> KWSAResult:
     """Run ``cfg.iterations`` KW–SA steps from ``x0``; the schedule index starts at
     ``start_iteration`` so callers can resume or interleave runs.  Returns the best point seen."""
@@ -110,11 +124,16 @@ def minimise(
     for n in range(start_iteration, start_iteration + cfg.iterations):
         a_n = cfg.a0 / (n + 1) ** cfg.alpha
         c_n = cfg.c0 / (n + 1) ** cfg.gamma
+        if cfg.restate_incumbent:
+            fx = f(x)
+            res.evaluations += 1
+            if fx < best_f:
+                best_x, best_f = x.copy(), fx
         if cfg.mode == "coordinate":
             for i in rng.permutation(x.size):
                 e = np.zeros_like(x)
                 e[i] = c_n
-                fp, fm = f(x + e), f(x - e)
+                fp, fm = map_fn(f, [x + e, x - e])
                 step = np.zeros_like(x)
                 step[i] = -a_n * (fp - fm) / (2 * c_n)
                 fs = f(x + step)
@@ -126,7 +145,7 @@ def minimise(
                     if fx < best_f:
                         best_x, best_f = x.copy(), fx
         else:
-            g, ev = kw_gradient(f, x, c_n)
+            g, ev = kw_gradient(f, x, c_n, map_fn)
             res.evaluations += ev
             cand = x - a_n * g
             if cfg.jitter > 0:

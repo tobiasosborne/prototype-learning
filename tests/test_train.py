@@ -117,3 +117,37 @@ def test_kl_rejects_garbage() -> None:
         losses.kl_divergence(np.array([0.5, 0.6]), np.array([0.5, 0.5]))
     with pytest.raises(ValueError):
         losses.kl_divergence(np.array([1.0, 0.0]), np.array([np.nan, 1.0]))
+
+
+def test_kwsa_restate_incumbent_for_nonstationary_objective() -> None:
+    # Objective changes between iterations (mini-batch style). Without re-scoring the incumbent
+    # the Metropolis comparison uses a stale loss; with restate_incumbent=True it is re-evaluated.
+    calls: list[np.ndarray] = []
+    phase = {"k": 0}
+
+    def f(x: np.ndarray) -> float:
+        calls.append(x.copy())
+        return float(np.sum((x - phase["k"]) ** 2))
+
+    def cb(n: int, x: np.ndarray, fx: float) -> None:
+        phase["k"] += 1
+
+    res = kwsa.minimise(
+        f, np.zeros(1), kwsa.KWSAConfig(iterations=3, a0=0.5, c0=0.1, restate_incumbent=True), cb
+    )
+    # 1 initial + per iteration: 1 restate + 3 probes (coordinate mode, 1 param)
+    assert res.evaluations == 1 + 3 * (1 + 3)
+    assert res.final_params is not None
+
+
+def test_kwsa_map_fn_parallel_probes_equivalent() -> None:
+    target = np.array([0.3, -1.2, 2.0])
+
+    def f(x: np.ndarray) -> float:
+        return float(np.sum((x - target) ** 2))
+
+    cfg = kwsa.KWSAConfig(iterations=10, a0=0.5, c0=0.1, seed=1)
+    serial = kwsa.minimise(f, np.zeros(3), cfg)
+    par = kwsa.minimise(f, np.zeros(3), cfg, map_fn=lambda fn, xs: [fn(x) for x in xs])
+    np.testing.assert_allclose(serial.params, par.params)
+    assert serial.history == par.history
