@@ -1,78 +1,48 @@
-"""Small, independent full-matrix density-matrix simulator for cross-check tests.
+"""Independent, deliberately direct density-matrix simulator for test cross-checks.
 
-This module deliberately uses explicit Kronecker products and permutation matrices.  It does
-not import the production simulator, so agreement with it is meaningful.  Qubit zero is the
-most-significant tensor factor throughout, as required by the oracle task specification.
+Qubit 0 is the most significant tensor factor.  Operators are embedded by explicitly
+constructing ``M kron I_rest`` and conjugating it with a basis permutation matrix; this
+module intentionally shares no simulator machinery with :mod:`ptqnn`.
 """
 
-from collections.abc import Sequence
 from numbers import Real
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 
-type ComplexArray = npt.NDArray[np.complex128]
-type RealArray = npt.NDArray[np.float64]
-type Operation = tuple[object, ...]
-
-__all__ = ["embed", "marginal", "probabilities", "run"]
-
+ComplexMatrix = npt.NDArray[np.complex128]
+RealVector = npt.NDArray[np.float64]
+Operation = tuple[object, ...]
 
 _I = np.eye(2, dtype=np.complex128)
-_H = np.array([[1.0, 1.0], [1.0, -1.0]], dtype=np.complex128) / np.sqrt(2.0)
-_X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
-_Y = np.array([[0.0, -1.0j], [1.0j, 0.0]], dtype=np.complex128)
-_Z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.complex128)
-_S = np.diag(np.array([1.0, 1.0j], dtype=np.complex128))
-_T = np.diag(np.array([1.0, np.exp(1.0j * np.pi / 4.0)], dtype=np.complex128))
 _P0 = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.complex128)
 _P1 = np.array([[0.0, 0.0], [0.0, 1.0]], dtype=np.complex128)
-_RESET_0 = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.complex128)
-_RESET_1 = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.complex128)
-_SWAP = np.array(
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ],
-    dtype=np.complex128,
-)
-
-_NAMED_GATES: dict[str, ComplexArray] = {
-    "h": _H,
-    "x": _X,
-    "y": _Y,
-    "z": _Z,
-    "s": _S,
-    "t": _T,
-}
 
 
-def _validate_n(n: int) -> None:
-    if not isinstance(n, int):
-        raise TypeError("n must be an int")
-    if n < 0:
-        raise ValueError("n must be non-negative")
+def _basis_bits(index: int, width: int) -> tuple[int, ...]:
+    """Return the msb-first bits of a basis index without bit-level manipulation."""
+    if width == 0:
+        return ()
+    return tuple(int(bit) for bit in np.unravel_index(index, (2,) * width))
 
 
-def _validate_qubits(n: int, qubits: Sequence[int]) -> None:
-    if len(set(qubits)) != len(qubits):
-        raise ValueError("qubits must be distinct")
-    if any(q < 0 or q >= n for q in qubits):
-        raise ValueError(f"qubits must be in range(0, {n})")
+def _basis_index(bits: tuple[int, ...]) -> int:
+    """Return the basis index of an msb-first bit tuple."""
+    if not bits:
+        return 0
+    return int(np.ravel_multi_index(bits, (2,) * len(bits)))
+
+
+def _check_n(n: int) -> None:
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer")
 
 
 def _as_qubit(value: object) -> int:
-    if not isinstance(value, int):
-        raise TypeError("a qubit index must be an int")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("qubits must be integers")
     return value
-
-
-def _as_qubit_list(value: object) -> list[int]:
-    if not isinstance(value, list):
-        raise TypeError("qubit collections in operations must be lists")
-    return [_as_qubit(q) for q in value]
 
 
 def _as_angle(value: object) -> float:
@@ -81,231 +51,284 @@ def _as_angle(value: object) -> float:
     return float(value)
 
 
-def _as_matrix(value: object) -> ComplexArray:
-    matrix = np.asarray(value, dtype=np.complex128)
-    if matrix.ndim != 2:
-        raise ValueError("an operator must be a matrix")
-    return matrix
+def _as_qubit_list(value: object) -> list[int]:
+    if not isinstance(value, list):
+        raise TypeError("the qubit collection must be a list")
+    return [_as_qubit(item) for item in value]
 
 
-def _expect_length(op: Operation, expected: int) -> None:
-    if len(op) != expected:
-        raise ValueError(f"operation {op[0]!r} must have {expected} entries")
+def _as_matrix(value: object) -> ComplexMatrix:
+    return np.asarray(cast(npt.ArrayLike, value), dtype=np.complex128)
 
 
-def _index_to_bits(index: int, width: int) -> tuple[int, ...]:
-    if width == 0:
-        return ()
-    return tuple(int(bit) for bit in np.unravel_index(index, (2,) * width))
+def _check_qubits(n: int, qubits: list[int]) -> None:
+    if len(set(qubits)) != len(qubits):
+        raise ValueError("qubits must be distinct")
+    if any(q < 0 or q >= n for q in qubits):
+        raise ValueError(f"qubits must lie in range(0, {n})")
 
 
-def _bits_to_index(bits: Sequence[int]) -> int:
-    width = len(bits)
-    return sum(bit * 2 ** (width - 1 - position) for position, bit in enumerate(bits))
+def _check_arity(op: Operation, arity: int) -> None:
+    if len(op) != arity:
+        raise ValueError(f"operation {op[0]!r} must have {arity} entries")
 
 
-def _matrix_qubit_count(matrix: ComplexArray) -> int:
-    if matrix.shape[0] != matrix.shape[1]:
-        raise ValueError("density matrix must be square")
-    dimension = matrix.shape[0]
-    qubits = 0
-    expected_dimension = 1
-    while expected_dimension < dimension:
-        expected_dimension *= 2
-        qubits += 1
-    if expected_dimension != dimension:
-        raise ValueError("density-matrix dimension must be a power of two")
-    return qubits
+def _density_qubit_count(rho: ComplexMatrix) -> int:
+    if rho.ndim != 2 or rho.shape[0] != rho.shape[1]:
+        raise ValueError("rho must be a square matrix")
+    dimension = rho.shape[0]
+    n = 0
+    power_of_two = 1
+    while power_of_two < dimension:
+        power_of_two *= 2
+        n += 1
+    if power_of_two != dimension:
+        raise ValueError("rho dimension must be a power of two")
+    return n
 
 
-def embed(n: int, qubits: Sequence[int], M: object) -> ComplexArray:
-    """Embed ``M`` on ``qubits`` using an explicit tensor-factor permutation.
+def embed(n: int, qubits: list[int], M: ComplexMatrix) -> ComplexMatrix:
+    """Embed ``M`` on ``qubits`` using an explicit tensor product and permutation.
 
-    ``M`` uses the listed-qubit ordering, with the first listed qubit as its most-significant
-    tensor factor.  The returned operator uses canonical qubit order ``0, ..., n - 1``.
+    ``M`` uses the tensor-factor order in ``qubits``.  First, the operator is built in
+    the temporary order ``qubits + remaining_qubits``.  The permutation matrix maps each
+    temporary-order basis vector to the corresponding canonical-order basis vector.
     """
-
-    _validate_n(n)
-    listed_qubits = list(qubits)
-    _validate_qubits(n, listed_qubits)
-    matrix = _as_matrix(M)
-    local_dimension = 2 ** len(listed_qubits)
-    if matrix.shape != (local_dimension, local_dimension):
+    _check_n(n)
+    _check_qubits(n, qubits)
+    local = np.asarray(M, dtype=np.complex128)
+    expected_dimension = 2 ** len(qubits)
+    if local.shape != (expected_dimension, expected_dimension):
         raise ValueError(
-            f"operator on {len(listed_qubits)} qubits must have shape "
-            f"({local_dimension}, {local_dimension})"
+            f"M has shape {local.shape}, expected {(expected_dimension, expected_dimension)}"
         )
 
-    remaining_qubits = [q for q in range(n) if q not in listed_qubits]
-    ordered_qubits = listed_qubits + remaining_qubits
-    identity_on_rest = np.eye(2 ** len(remaining_qubits), dtype=np.complex128)
-    operator_in_listed_order = np.kron(matrix, identity_on_rest)
+    remaining = [q for q in range(n) if q not in qubits]
+    temporary_order = qubits + remaining
+
+    # This is literally M ⊗ I ⊗ ... ⊗ I in the temporary tensor-factor order.
+    temporary_operator = local
+    for _ in remaining:
+        temporary_operator = np.asarray(
+            np.kron(temporary_operator, _I), dtype=np.complex128
+        )
 
     dimension = 2**n
     permutation = np.zeros((dimension, dimension), dtype=np.complex128)
-    for ordered_index in range(dimension):
-        ordered_bits = _index_to_bits(ordered_index, n)
-        canonical_bits = [0] * n
-        for position, qubit in enumerate(ordered_qubits):
-            canonical_bits[qubit] = ordered_bits[position]
-        canonical_index = _bits_to_index(canonical_bits)
-        permutation[canonical_index, ordered_index] = 1.0
+    for temporary_index in range(dimension):
+        temporary_bits = _basis_bits(temporary_index, n)
+        canonical_bits = tuple(temporary_bits[temporary_order.index(q)] for q in range(n))
+        canonical_index = _basis_index(canonical_bits)
+        permutation[canonical_index, temporary_index] = 1.0
 
-    embedded = permutation @ operator_in_listed_order @ permutation.conj().T
-    return np.asarray(embedded, dtype=np.complex128)
+    return permutation @ temporary_operator @ permutation.conj().T
 
 
-def _rx(theta: float) -> ComplexArray:
-    # Standard rotations and qubit ordering are fixed by [TASK SPEC].
+def _rx(theta: float) -> ComplexMatrix:
     cosine = np.cos(theta / 2.0)
     sine = np.sin(theta / 2.0)
-    return np.array([[cosine, -1.0j * sine], [-1.0j * sine, cosine]], dtype=np.complex128)
+    return np.array([[cosine, -1j * sine], [-1j * sine, cosine]], dtype=np.complex128)
 
 
-def _ry(theta: float) -> ComplexArray:
+def _ry(theta: float) -> ComplexMatrix:
     cosine = np.cos(theta / 2.0)
     sine = np.sin(theta / 2.0)
     return np.array([[cosine, -sine], [sine, cosine]], dtype=np.complex128)
 
 
-def _rz(theta: float) -> ComplexArray:
-    return np.diag(
-        np.array(
-            [np.exp(-1.0j * theta / 2.0), np.exp(1.0j * theta / 2.0)],
+def _rz(theta: float) -> ComplexMatrix:
+    return np.diag(np.array([np.exp(-0.5j * theta), np.exp(0.5j * theta)], dtype=np.complex128))
+
+
+def _fixed_gate(name: str) -> ComplexMatrix:
+    # Gate matrices use the standard convention requested for this oracle. [TASK SPECIFICATION]
+    if name == "h":
+        return np.asarray(
+            np.array([[1.0, 1.0], [1.0, -1.0]], dtype=np.complex128) * 2.0**-0.5,
             dtype=np.complex128,
         )
-    )
+    if name == "x":
+        return np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
+    if name == "y":
+        return np.array([[0.0, -1j], [1j, 0.0]], dtype=np.complex128)
+    if name == "z":
+        return np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.complex128)
+    if name == "s":
+        return np.diag(np.array([1.0, 1j], dtype=np.complex128))
+    if name == "t":
+        return np.diag(np.array([1.0, np.exp(0.25j * np.pi)], dtype=np.complex128))
+    raise ValueError(f"unknown fixed gate {name!r}")
 
 
-def _controlled(n: int, control: int, target: int, target_gate: ComplexArray) -> ComplexArray:
-    if control == target:
-        raise ValueError("control and target must be distinct")
-    _validate_qubits(n, [control, target])
-    control_zero = embed(n, [control], _P0)
-    control_one = embed(n, [control], _P1)
-    gate_on_target = embed(n, [target], target_gate)
-    return control_zero + control_one @ gate_on_target
+def _apply_unitary(
+    rho: ComplexMatrix, n: int, qubits: list[int], unitary: ComplexMatrix
+) -> ComplexMatrix:
+    full_unitary = embed(n, qubits, unitary)
+    return full_unitary @ rho @ full_unitary.conj().T
 
 
-def _apply_unitary(rho: ComplexArray, unitary: ComplexArray) -> ComplexArray:
-    return unitary @ rho @ unitary.conj().T
-
-
-def _apply_kraus(rho: ComplexArray, operators: Sequence[ComplexArray]) -> ComplexArray:
+def _apply_kraus(
+    rho: ComplexMatrix, n: int, qubits: list[int], kraus_operators: list[ComplexMatrix]
+) -> ComplexMatrix:
     result = np.zeros_like(rho, dtype=np.complex128)
-    for operator in operators:
-        result = result + operator @ rho @ operator.conj().T
+    for local_operator in kraus_operators:
+        full_operator = embed(n, qubits, local_operator)
+        result = result + full_operator @ rho @ full_operator.conj().T
     return result
 
 
-def run(n: int, ops: list[Operation], rho0: ComplexArray | None = None) -> ComplexArray:
-    """Apply ``ops`` in order and return the final full density matrix."""
-
-    _validate_n(n)
+def _initial_density(n: int, rho0: ComplexMatrix | None) -> ComplexMatrix:
     dimension = 2**n
-    if rho0 is None:
-        rho = np.zeros((dimension, dimension), dtype=np.complex128)
-        rho[0, 0] = 1.0
-    else:
-        rho = np.asarray(rho0, dtype=np.complex128).copy()
+    if rho0 is not None:
+        rho = np.asarray(rho0, dtype=np.complex128)
         if rho.shape != (dimension, dimension):
-            raise ValueError(f"rho0 must have shape ({dimension}, {dimension})")
+            raise ValueError(f"rho0 has shape {rho.shape}, expected {(dimension, dimension)}")
+        return rho.copy()
+
+    zero = np.array([1.0, 0.0], dtype=np.complex128)
+    state = np.array([1.0], dtype=np.complex128)
+    for _ in range(n):
+        state = np.asarray(np.kron(state, zero), dtype=np.complex128)
+    return np.outer(state, state.conj())
+
+
+def run(n: int, ops: list[Operation], rho0: ComplexMatrix | None = None) -> ComplexMatrix:
+    """Apply ``ops`` in order and return the resulting complex128 density matrix."""
+    _check_n(n)
+    rho = _initial_density(n, rho0)
 
     for op in ops:
         if not op or not isinstance(op[0], str):
-            raise ValueError("every operation must start with a string name")
+            raise ValueError("each operation must begin with a string name")
         name = op[0]
 
-        if name in _NAMED_GATES:
-            _expect_length(op, 2)
-            qubit = _as_qubit(op[1])
-            rho = _apply_unitary(rho, embed(n, [qubit], _NAMED_GATES[name]))
-        elif name in {"rx", "ry", "rz"}:
-            _expect_length(op, 3)
-            qubit = _as_qubit(op[1])
+        if name in {"h", "x", "y", "z", "s", "t"}:
+            _check_arity(op, 2)
+            q = _as_qubit(op[1])
+            _check_qubits(n, [q])
+            rho = _apply_unitary(rho, n, [q], _fixed_gate(name))
+            continue
+
+        if name in {"rx", "ry", "rz"}:
+            _check_arity(op, 3)
+            q = _as_qubit(op[1])
             theta = _as_angle(op[2])
+            _check_qubits(n, [q])
             rotation = {"rx": _rx, "ry": _ry, "rz": _rz}[name](theta)
-            rho = _apply_unitary(rho, embed(n, [qubit], rotation))
-        elif name == "crx":
-            _expect_length(op, 4)
+            rho = _apply_unitary(rho, n, [q], rotation)
+            continue
+
+        if name in {"crx", "cx", "cz"}:
+            expected_arity = 4 if name == "crx" else 3
+            _check_arity(op, expected_arity)
             control = _as_qubit(op[1])
             target = _as_qubit(op[2])
-            theta = _as_angle(op[3])
-            rho = _apply_unitary(rho, _controlled(n, control, target, _rx(theta)))
-        elif name in {"cx", "cz"}:
-            _expect_length(op, 3)
-            control = _as_qubit(op[1])
-            target = _as_qubit(op[2])
-            target_gate = _X if name == "cx" else _Z
-            rho = _apply_unitary(rho, _controlled(n, control, target, target_gate))
-        elif name == "swap":
-            _expect_length(op, 3)
+            _check_qubits(n, [control, target])
+            if name == "crx":
+                target_gate = _rx(_as_angle(op[3]))
+            elif name == "cx":
+                target_gate = _fixed_gate("x")
+            else:
+                target_gate = _fixed_gate("z")
+            controlled = np.kron(_P0, _I) + np.kron(_P1, target_gate)
+            rho = _apply_unitary(rho, n, [control, target], controlled)
+            continue
+
+        if name == "swap":
+            _check_arity(op, 3)
             first = _as_qubit(op[1])
             second = _as_qubit(op[2])
-            if first == second:
-                raise ValueError("swap qubits must be distinct")
-            rho = _apply_unitary(rho, embed(n, [first, second], _SWAP))
-        elif name == "u":
-            _expect_length(op, 3)
+            _check_qubits(n, [first, second])
+            swap = np.array(
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                dtype=np.complex128,
+            )
+            rho = _apply_unitary(rho, n, [first, second], swap)
+            continue
+
+        if name == "u":
+            _check_arity(op, 3)
             qubits = _as_qubit_list(op[1])
-            unitary = embed(n, qubits, _as_matrix(op[2]))
-            rho = _apply_unitary(rho, unitary)
-        elif name == "kraus":
-            _expect_length(op, 3)
+            _check_qubits(n, qubits)
+            unitary = _as_matrix(op[2])
+            local_dimension = 2 ** len(qubits)
+            if unitary.shape != (local_dimension, local_dimension):
+                raise ValueError("unitary shape does not match its qubit list")
+            rho = _apply_unitary(rho, n, qubits, unitary)
+            continue
+
+        if name == "kraus":
+            _check_arity(op, 3)
             qubits = _as_qubit_list(op[1])
-            if not isinstance(op[2], list) or not op[2]:
-                raise TypeError("a Kraus operation needs a non-empty list of operators")
-            full_operators = [embed(n, qubits, _as_matrix(operator)) for operator in op[2]]
-            rho = _apply_kraus(rho, full_operators)
-        elif name == "reset":
-            _expect_length(op, 2)
-            qubit = _as_qubit(op[1])
-            full_operators = [embed(n, [qubit], _RESET_0), embed(n, [qubit], _RESET_1)]
-            rho = _apply_kraus(rho, full_operators)
-        else:
-            raise ValueError(f"unsupported operation {name!r}")
+            _check_qubits(n, qubits)
+            raw_operators = op[2]
+            if not isinstance(raw_operators, list) or not raw_operators:
+                raise ValueError("a Kraus operation needs a nonempty list of operators")
+            kraus_operators = [_as_matrix(operator) for operator in raw_operators]
+            local_dimension = 2 ** len(qubits)
+            if any(
+                operator.shape != (local_dimension, local_dimension) for operator in kraus_operators
+            ):
+                raise ValueError("Kraus operator shape does not match its qubit list")
+            rho = _apply_kraus(rho, n, qubits, kraus_operators)
+            continue
+
+        if name == "reset":
+            _check_arity(op, 2)
+            q = _as_qubit(op[1])
+            _check_qubits(n, [q])
+            # {|0><0|, |0><1|} gives |0><0|_q tensor Tr_q(rho). [TASK SPECIFICATION]
+            reset_zero = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.complex128)
+            reset_one = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.complex128)
+            rho = _apply_kraus(rho, n, [q], [reset_zero, reset_one])
+            continue
+
+        raise ValueError(f"unsupported operation {name!r}")
 
     return np.asarray(rho, dtype=np.complex128)
 
 
-def probabilities(rho: ComplexArray) -> RealArray:
-    """Return computational-basis probabilities in canonical MSB-first order."""
-
+def probabilities(rho: ComplexMatrix) -> RealVector:
+    """Return computational-basis probabilities in canonical msb-first order."""
     matrix = np.asarray(rho, dtype=np.complex128)
-    _matrix_qubit_count(matrix)
-    return np.asarray(np.diag(matrix).real, dtype=np.float64)
+    _density_qubit_count(matrix)
+    return np.asarray(np.real(np.diag(matrix)), dtype=np.float64)
 
 
-def marginal(rho: ComplexArray, keep: list[int]) -> ComplexArray:
-    """Trace out all but ``keep``, preserving the given order of kept qubits."""
-
+def marginal(rho: ComplexMatrix, keep: list[int]) -> ComplexMatrix:
+    """Trace out unkept qubits, retaining tensor factors in exactly ``keep`` order."""
     matrix = np.asarray(rho, dtype=np.complex128)
-    n = _matrix_qubit_count(matrix)
-    _validate_qubits(n, keep)
-    traced_qubits = [q for q in range(n) if q not in keep]
+    n = _density_qubit_count(matrix)
+    _check_qubits(n, keep)
+    traced = [q for q in range(n) if q not in keep]
+
     kept_dimension = 2 ** len(keep)
-    traced_dimension = 2 ** len(traced_qubits)
-    result = np.zeros((kept_dimension, kept_dimension), dtype=np.complex128)
+    traced_dimension = 2 ** len(traced)
+    reduced = np.zeros((kept_dimension, kept_dimension), dtype=np.complex128)
 
-    for kept_row in range(kept_dimension):
-        kept_row_bits = _index_to_bits(kept_row, len(keep))
-        for kept_column in range(kept_dimension):
-            kept_column_bits = _index_to_bits(kept_column, len(keep))
-            total = 0.0 + 0.0j
+    for kept_row_index in range(kept_dimension):
+        kept_row_bits = _basis_bits(kept_row_index, len(keep))
+        for kept_column_index in range(kept_dimension):
+            kept_column_bits = _basis_bits(kept_column_index, len(keep))
             for traced_index in range(traced_dimension):
-                traced_bits = _index_to_bits(traced_index, len(traced_qubits))
-                canonical_row = [0] * n
-                canonical_column = [0] * n
-                for position, qubit in enumerate(keep):
-                    canonical_row[qubit] = kept_row_bits[position]
-                    canonical_column[qubit] = kept_column_bits[position]
-                for position, qubit in enumerate(traced_qubits):
-                    canonical_row[qubit] = traced_bits[position]
-                    canonical_column[qubit] = traced_bits[position]
-                total += matrix[
-                    _bits_to_index(canonical_row),
-                    _bits_to_index(canonical_column),
+                traced_bits = _basis_bits(traced_index, len(traced))
+                canonical_row_bits = tuple(
+                    kept_row_bits[keep.index(q)] if q in keep else traced_bits[traced.index(q)]
+                    for q in range(n)
+                )
+                canonical_column_bits = tuple(
+                    kept_column_bits[keep.index(q)] if q in keep else traced_bits[traced.index(q)]
+                    for q in range(n)
+                )
+                canonical_row = _basis_index(canonical_row_bits)
+                canonical_column = _basis_index(canonical_column_bits)
+                reduced[kept_row_index, kept_column_index] += matrix[
+                    canonical_row, canonical_column
                 ]
-            result[kept_row, kept_column] = total
 
-    return result
+    return reduced
