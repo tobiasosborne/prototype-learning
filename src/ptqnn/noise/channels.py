@@ -230,9 +230,12 @@ class ReadoutError:
             vals = v if isinstance(v, tuple) else (v,)
             if any(not 0 <= x <= 1 for x in vals):
                 raise ValueError(f"{name} must lie in [0, 1], got {v}")
-        if isinstance(self.p01, tuple) and isinstance(self.p10, tuple):
-            if len(self.p01) != len(self.p10):
-                raise ValueError("per-qubit p01 and p10 must have the same length")
+        if (
+            isinstance(self.p01, tuple)
+            and isinstance(self.p10, tuple)
+            and len(self.p01) != len(self.p10)
+        ):
+            raise ValueError("per-qubit p01 and p10 must have the same length")
 
     @classmethod
     def per_qubit(cls, pairs: Sequence[tuple[float, float]]) -> ReadoutError:
