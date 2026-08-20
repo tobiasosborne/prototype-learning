@@ -157,7 +157,14 @@ class NoiseModel:
 
     def scaled(self, factor: float) -> NoiseModel:
         """Noise strength multiplied by ``factor`` (depolarising ``p``, ``1/T1``, ``1/T2``,
-        readout error); used for noise sweeps and zero-noise-extrapolation style studies."""
+        readout error); used for noise sweeps and zero-noise-extrapolation style studies.
+
+        Gate channels are scaled through their average infidelity and re-emitted as depolarising
+        channels; a non-depolarising channel (e.g. amplitude damping) is therefore replaced by the
+        depolarising channel of equal average fidelity when ``factor ≠ 1`` — an approximation, and
+        the reason ``factor == 1`` returns the model unchanged (Codex review 02 #8)."""
+        if factor == 1:
+            return self
 
         if factor < 0:
             raise ValueError("factor must be non-negative")

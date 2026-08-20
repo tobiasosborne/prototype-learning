@@ -158,3 +158,12 @@ def test_all_channels_are_cptp(p: float, g: float, t1: float, ratio: float, dt: 
     assert_cptp(ch.amplitude_damping(g))
     assert_cptp(ch.phase_damping(g))
     assert_cptp(ch.thermal_relaxation(t1_us=t1, t2_us=ratio * 2 * t1, duration_us=dt))
+
+
+def test_readout_error_validation() -> None:
+    with pytest.raises(ValueError):
+        ch.ReadoutError(p01=1.2)
+    with pytest.raises(ValueError):
+        ch.ReadoutError(p01=(0.1, 0.2), p10=(0.3,))
+    with pytest.raises(ValueError, match="entries"):
+        ch.ReadoutError(p01=(0.1, 0.2), p10=(0.3, 0.4)).apply(np.array([1.0, 0.0]), n_qubits=1)

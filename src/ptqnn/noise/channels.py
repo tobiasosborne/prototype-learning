@@ -225,11 +225,23 @@ class ReadoutError:
     p01: float | tuple[float, ...] = 0.0
     p10: float | tuple[float, ...] = 0.0
 
+    def __post_init__(self) -> None:
+        for name, v in (("p01", self.p01), ("p10", self.p10)):
+            vals = v if isinstance(v, tuple) else (v,)
+            if any(not 0 <= x <= 1 for x in vals):
+                raise ValueError(f"{name} must lie in [0, 1], got {v}")
+        if isinstance(self.p01, tuple) and isinstance(self.p10, tuple):
+            if len(self.p01) != len(self.p10):
+                raise ValueError("per-qubit p01 and p10 must have the same length")
+
     @classmethod
     def per_qubit(cls, pairs: Sequence[tuple[float, float]]) -> ReadoutError:
         return cls(tuple(a for a, _ in pairs), tuple(b for _, b in pairs))
 
     def _pair(self, q: int, n: int) -> tuple[float, float]:
+        for v in (self.p01, self.p10):
+            if isinstance(v, tuple) and len(v) != n:
+                raise ValueError(f"per-qubit readout error has {len(v)} entries, circuit has {n}")
         a = self.p01[q] if isinstance(self.p01, tuple) else self.p01
         b = self.p10[q] if isinstance(self.p10, tuple) else self.p10
         return a, b

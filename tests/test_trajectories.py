@@ -70,3 +70,8 @@ def test_sampling_uses_kraus_branch_probabilities() -> None:
     circ = ir.Circuit(1, [ir.x(0), ir.Channel((0,), ch.amplitude_damping(1.0), "ad")])
     p = TrajectoryBackend(n_trajectories=50, seed=0).probabilities(circ)
     np.testing.assert_allclose(p, [1.0, 0.0], atol=1e-13)
+
+
+def test_rejects_bad_batch_size() -> None:
+    with pytest.raises(ValueError):
+        TrajectoryBackend(n_trajectories=3, batch_size=0)

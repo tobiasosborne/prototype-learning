@@ -146,3 +146,12 @@ def test_matches_qiskit_aer_without_idling() -> None:
 def test_scaled_zero_is_noiseless() -> None:
     nm = NoiseModel(one_qubit=ch.depolarizing(0.01, 1), t1_us=100.0, t2_us=50.0)
     assert nm.scaled(0.0).is_trivial()
+
+
+def test_scaled_one_is_identity_and_scaling_uses_infidelity() -> None:
+    nm = NoiseModel(one_qubit=ch.amplitude_damping(0.1), t1_us=100.0, t2_us=50.0)
+    assert nm.scaled(1.0) is nm
+    half = nm.scaled(0.5)
+    assert half.one_qubit is not None
+    f0 = ch.average_gate_fidelity(nm.one_qubit or [])
+    assert 1 - ch.average_gate_fidelity(half.one_qubit) == pytest.approx(0.5 * (1 - f0))

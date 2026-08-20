@@ -60,8 +60,10 @@ class TrajectoryBackend:
     """``Backend`` estimating the noisy outcome distribution from ``n_trajectories`` samples."""
 
     def __init__(self, n_trajectories: int = 1000, seed: int = 0, batch_size: int = 256):
-        if n_trajectories < 1:
-            raise ValueError("n_trajectories must be positive")
+        if n_trajectories < 1 or int(n_trajectories) != n_trajectories:
+            raise ValueError("n_trajectories must be a positive integer")
+        if batch_size < 1 or int(batch_size) != batch_size:
+            raise ValueError("batch_size must be a positive integer")
         self.n_trajectories = n_trajectories
         self.seed = seed
         self.batch_size = batch_size
