@@ -49,7 +49,25 @@ thrash between inputs; whatever the authors' iterative scheme was (SNN describes
 ℓ2 + KW–SA but gives no schedule), ours does not reach their ≈0-by-120 curve.
 
 ## Fig 7–9 — Iris
-(pending)
+
+Runs `experiments/runs/iris/20260820T144849Z` (seed 0), `…T145454Z`, `…T145455Z` (seeds 1, 2); 40
+sweeps each, 12 input + 4 hidden + 1 output = 17 qubits, dataset loaded as a uniform superposition
+over the distinct 12-bit codes (`Circuit.initial_state`).  Ground-truth finding: Fig 8's bar heights
+are 1/86, 4/86, 9/86 (train) and 1/154, 4/154, 9/154 (test), i.e. **p(x) ∝ (label+1)²** — the
+amplitude carries the label, the histogram its square (pinned in `tasks/iris/model.py`).
+
+| | paper | ours (seeds 0/1/2) |
+|---|---|---|
+| test accuracy, prototype | ≈98 % | 95 / 91 / 98 % (encoding ceiling 97 % on our split) |
+| test accuracy, classic | — | 95 / 92 / 91 % |
+| Fig 7 classic | train → 0, test rises to ≈0.045 | train → 0 within 1–4 sweeps, test bottoms at 0.033 then rises/plateaus |
+| Fig 7 prototype | both descend to ≈0.01/0.02 | train 0.003–0.014, test monotone, minimum at the last sweep |
+| Fig 9 TSNE | prototype weights span the data | **not reproduced** — both weight sets cluster away from the data |
+
+Assumptions: 1/3 stratified train split (matches Fig 8 bin counts 15/30), collisions merged by mean
+label, KL renormalised over all 4096 inputs (post-selecting on dataset codes lets the prototype net
+exploit inter-sample interference: train KL 1e-5 but read-out at chance).  **Fig 7/8: reproduced
+qualitatively; accuracy in range; Fig 9: discrepancy.**
 
 ## Fig 10–11 — Flappy Bird
 
