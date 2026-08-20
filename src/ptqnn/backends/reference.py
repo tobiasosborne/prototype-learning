@@ -57,7 +57,11 @@ def apply_gate_sv(psi: Complex, gate: Gate, n: int) -> Complex:
 def superoperator(kraus: Sequence[Complex]) -> Complex:
     """``S = Σ_i K_i ⊗ K_i*`` acting on the row-major vectorisation ``vec(X)[a·d + b] = X[a, b]``
     of the channel's own ``d × d`` block, since ``vec(A X B) = (A ⊗ Bᵀ) vec(X)``."""
-    return sum((np.kron(k, k.conj()) for k in kraus), 0 * np.kron(kraus[0], kraus[0]))
+    d2 = kraus[0].shape[0] ** 2
+    s: Complex = np.zeros((d2, d2), dtype=np.complex128)
+    for k in kraus:
+        s = s + np.kron(k, k.conj())
+    return s
 
 
 def _apply_superop_dm(rho: Complex, s: Complex, qubits: Sequence[int], n: int) -> Complex:
@@ -81,7 +85,7 @@ def _apply_superop_dm(rho: Complex, s: Complex, qubits: Sequence[int], n: int) -
 
 def apply_gate_dm(rho: Complex, gate: Gate, n: int) -> Complex:
     """``ρ ↦ U ρ U†`` as the superoperator ``U ⊗ U*`` on the gate's block."""
-    return _apply_superop_dm(rho, np.kron(gate.matrix, gate.matrix.conj()), gate.qubits, n)
+    return _apply_superop_dm(rho, superoperator([gate.matrix]), gate.qubits, n)
 
 
 def apply_channel(rho: Complex, ch: Channel, n: int) -> Complex:
