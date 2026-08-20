@@ -45,6 +45,8 @@ sh scripts/check-all.sh             # all of the above; run before every worklog
 - orkan (`../orkan`) has no CRX, no sampling, no RNG, 1-qubit Kraus only, density matrices
   cap at ~14 qubits (2 GB). The ctypes binding mirrors `state_t` byte-exactly; see
   `../Sturm.jl/src/orkan/ffi.jl` for the working Julia precedent.
+- CuPy only sees the RTX 3090 with `LD_LIBRARY_PATH=/usr/lib/wsl/lib` (WSL2 libcuda); without it
+  `cudaErrorNoDevice`. `nvidia-smi` working proves nothing about CuPy.
 - `../QuantumHardware.jl/devices/*.toml` is thin: no T1 data anywhere, Quantinuum H1/H2 are the
   only devices with gate fidelities + readout. Vendor presets here record their own provenance.
 
