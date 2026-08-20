@@ -37,12 +37,13 @@ def target_distribution(n_bits: int) -> Real:
     return w / w.sum()
 
 
-def target_activation(n_bits: int) -> Real:
-    """Per-input target ``P(out=1 | x) = (popcount+1)/(n_bits+1)`` for the iterative scheme:
-    with uniform inputs this conditional reproduces ``target_distribution`` exactly
-    (``[ASSUMPTION]`` — the paper's iterative baseline in Fig 6 is described only as
-    "optimizing examples iteratively")."""
-    return np.asarray((popcounts(n_bits) + 1.0) / (n_bits + 1.0), dtype=np.float64)
+def target_activation(n_bits: int, scale: float = 1.0) -> Real:
+    """Per-input target ``P(out=1 | x) = scale · (popcount+1)/(n_bits+1)`` for the iterative
+    scheme: with uniform inputs any ``scale`` reproduces ``target_distribution`` after the
+    renormalisation, but the sample-wise loss pins the absolute level, which the superposition
+    loss does not — a strictly harder problem (``[ASSUMPTION]``; the paper's iterative baseline
+    in Fig 6 is described only as "optimizing examples iteratively")."""
+    return np.asarray(scale * (popcounts(n_bits) + 1.0) / (n_bits + 1.0), dtype=np.float64)
 
 
 def network(n_bits: int = 5, n_hidden: int = 5, hidden: HiddenKind = "prototype") -> Network:
@@ -72,10 +73,12 @@ def kl_loss(net: Network, backend: Backend | None = None) -> Loss:
     return loss
 
 
-def sample_loss(net: Network, x: int, backend: Backend | None = None) -> Loss:
+def sample_loss(
+    net: Network, x: int, backend: Backend | None = None, target_scale: float = 1.0
+) -> Loss:
     """Squared error of ``P(out=1)`` against the target activation for one input ``x``."""
     be = backend or ref.StatevectorBackend()
-    t = target_activation(net.n_inputs)[x]
+    t = target_activation(net.n_inputs, target_scale)[x]
     prep = basis_prep(net, x)
 
     def loss(params: Real) -> float:
@@ -115,6 +118,7 @@ def train_iterative(
     iterations: int = 200,
     backend: Backend | None = None,
     config: kwsa.KWSAConfig | None = None,
+    target_scale: float = 1.0,
 ) -> kwsa.KWSAResult:
     """Sample-wise baseline (Fig 6, red): each iteration takes one KW–SA step on the squared
     error of a single random input; the KL of the full distribution is recorded per iteration."""
@@ -132,7 +136,9 @@ def train_iterative(
         )
         # one KW sweep on this sample at schedule position n (a_n, c_n decay as in the
         # superposition run); continue from the annealer's accepted state, not its best.
-        res = kwsa.minimise(sample_loss(net, sample, backend), x, step_cfg, start_iteration=n)
+        res = kwsa.minimise(
+            sample_loss(net, sample, backend, target_scale), x, step_cfg, start_iteration=n
+        )
         x = res.final_params if res.final_params is not None else res.params
         evaluations += res.evaluations
         kl = monitor(x)

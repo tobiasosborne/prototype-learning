@@ -38,8 +38,15 @@ residual KL ≈ 2.6e-3 against the same target.  **Reproduced.**
 
 The iterative scheme (one sweep on the squared error of one random input per iteration) is our
 construction `[ASSUMPTION]`; see `experiments/runs/bitcount/20260820T135930Z/results.md` and the
-tuning note below.  **Superposition: reproduced; iterative baseline: qualitative only (slower, as in
+tuning note.  **Superposition: reproduced; iterative baseline: qualitative only (slower, as in
 the paper) — discrepancy recorded.**
+
+Tuning note (iterative baseline, 3 seeds × 300 sweeps, scratch sweeps 2026-08-20): step sizes
+`a0 ∈ {2, 5, 20, 50, 100}`, `alpha ∈ {0, 0.3}`, coordinate and whole-vector modes, and a scaled
+per-sample target (`target_scale ∈ {0.3, 0.5, 0.7, 1}`) all leave the median KL between 0.05 and
+0.3; the best single run reached 0.046.  Per-sample squared-error updates on one input at a time
+thrash between inputs; whatever the authors' iterative scheme was (SNN describes sample-wise
+ℓ2 + KW–SA but gives no schedule), ours does not reach their ≈0-by-120 curve.
 
 ## Fig 7–9 — Iris
 (pending)
