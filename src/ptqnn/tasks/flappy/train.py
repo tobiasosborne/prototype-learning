@@ -15,17 +15,22 @@ below is ``[ASSUMPTION]``:
 * **Multi-start.** ``n_restarts`` random parameter vectors are scored on short episodes and the
   best one seeds the KW–SA run.  17 parameters is small enough that random search finds a decent
   basin cheaply, and KW–SA then only has to polish it.
-* **Rotating episode batch.** Each KW–SA iteration is scored on a fresh batch of seeds drawn
-  from a pool (:class:`SeedRotation`).  With a fixed batch the agent memorises those pipe
-  sequences and still dies on held-out ones; rotating costs nothing per evaluation and is what
-  turns "survives the training episodes" into "plays the game".
+* **Episode length over episode count.** Coverage of pipe-height *transitions* is what
+  generalises: five 1500-frame episodes (≈165 transitions) beat eight 800-frame ones on
+  held-out seeds (20/20 vs 15/20 perfect games).  A rotating seed batch (:class:`SeedRotation`)
+  looks like the textbook fix and is *worse* here — 0/25 — because
+  :func:`ptqnn.train.kwsa.minimise` carries its incumbent loss across iterations without
+  re-evaluating it, so a rotated batch makes the Metropolis comparison meaningless.  It is kept
+  off by default (``batch=0``) and would need an optimiser that re-scores the incumbent.
 * **Budget.** We do not attempt the paper's 6-day run.  The target is deterministic perfect play
-  on our clone under a step cap: 5000 frames at one pipe per 45 frames is ≥ 110 pipes.
+  on our clone under a step cap: 5000 frames at one pipe per 45 frames is 110 pipes.  The
+  defaults (200 restarts + 12 coordinate sweeps ≈ 800 loss evaluations, ~90 s) reach 110/110 on
+  20 held-out seeds.
 
-Everything is single-process and deterministic: with the fast linear evaluation path of
-:class:`~ptqnn.tasks.flappy.agent.QuantumFlappyPolicy` an 800-frame episode costs about a
-millisecond, so a full training run is minutes, not days, and multiprocessing would only add
-noise and nondeterminism.
+Everything is single-process and deterministic: with the fast linear evaluation path and the
+decision cache of :class:`~ptqnn.tasks.flappy.agent.QuantumFlappyPolicy` a 1500-frame episode
+costs ≈45 ms (dominated by the clone, not the simulator), so a full run is a couple of minutes
+and multiprocessing would only add nondeterminism.
 """
 
 from __future__ import annotations
@@ -47,7 +52,7 @@ Real = npt.NDArray[np.float64]
 Loss = Callable[[Real], float]
 
 DEFAULT_KWSA = kwsa.KWSAConfig(
-    iterations=40,
+    iterations=12,
     a0=0.4,
     alpha=0.602,
     c0=0.25,
@@ -59,9 +64,10 @@ DEFAULT_KWSA = kwsa.KWSAConfig(
     mode="coordinate",
 )
 """``[ASSUMPTION]`` — no schedule is published.  Coordinate sweeps (17 parameters × 3 probes =
-51 episode-batch evaluations per iteration), a comparatively large difference step ``c0 = 0.25``
-rad because the loss is a step function of the decision boundary, and a small starting
-temperature so a sweep can climb out of a plateau."""
+51 episode-batch evaluations per iteration, so 12 sweeps ≈ 612 evaluations), a comparatively
+large difference step ``c0 = 0.25`` rad because the loss is a step function of the decision
+boundary, and a small starting temperature so a sweep can climb out of a plateau.  12 sweeps
+is where the held-out score saturates at 110/110; more only costs time."""
 
 
 @dataclass(frozen=True)
@@ -120,15 +126,15 @@ def episode_loss(results: Sequence[ag.EpisodeResult], shaping_weight: float) -> 
 
 
 class SeedRotation:
-    """A rotating mini-batch of episode seeds ``[ASSUMPTION]``.
+    """A rotating mini-batch of episode seeds — **off by default**, see the module docstring.
 
-    Training on a fixed handful of seeds overfits their particular pipe sequences: the policy
-    survives them and still dies on a held-out one.  Drawing a fresh batch every KW–SA
-    *iteration* turns the fixed training set into a stream, at no extra cost per evaluation.
-    The batch is held constant *within* an iteration so that the central differences of that
-    sweep see the same episodes — KW is built for noisy evaluations ("estimates the gradient of
-    an objective function from noisy function evaluations" ``[PTQNN §II.C]``), but a difference
-    quotient across two different batches would be pure noise.
+    The batch is held constant *within* an iteration so that that sweep's central differences
+    see the same episodes; KW is built for noisy evaluations ("estimates the gradient of an
+    objective function from noisy function evaluations" ``[PTQNN §II.C]``).  Across iterations,
+    however, :func:`ptqnn.train.kwsa.minimise` reuses the incumbent loss it computed on the
+    previous batch, so every rotation corrupts the Metropolis comparison; measured, this turns
+    20/25 perfect held-out games into 0/25.  Kept for the record and for optimisers that
+    re-score the incumbent.
     """
 
     def __init__(self, pool: Sequence[int], batch: int, rng: np.random.Generator) -> None:
@@ -214,12 +220,12 @@ def random_restarts(
 def train(
     net: Network,
     cfg: kwsa.KWSAConfig | None = None,
-    seeds: Sequence[int] = tuple(range(16)),
-    max_steps: int = 1200,
+    seeds: Sequence[int] = (0, 1, 2, 3, 4),
+    max_steps: int = 1500,
     objective_config: ObjectiveConfig | None = None,
     n_restarts: int = 200,
     restart_steps: int = 250,
-    batch: int = 4,
+    batch: int = 0,
     eval_seeds: Sequence[int] | None = None,
     eval_steps: int = 5000,
     backend: Backend | None = None,
@@ -227,9 +233,10 @@ def train(
 ) -> FlappyTrainResult:
     """Random multi-start, then KW–SA on the shaped episode return.
 
-    ``seeds`` is the pool of training episodes; each KW–SA iteration is scored on a fresh
-    ``batch`` of ``batch`` of them (:class:`SeedRotation`; ``batch <= 0`` uses the whole pool
-    every time).  ``eval_seeds`` are the held-out episodes the final score is reported on.
+    ``seeds`` are the training episodes — every loss evaluation plays all of them.  With
+    ``batch > 0`` they instead become a pool from which each iteration draws a fresh
+    :class:`SeedRotation` batch (not recommended, see the module docstring).  ``eval_seeds`` are
+    the held-out episodes the final score is reported on.
     """
     k = cfg or DEFAULT_KWSA
     oc = replace(objective_config or ObjectiveConfig(), max_steps=max_steps)

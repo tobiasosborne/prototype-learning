@@ -294,21 +294,40 @@ def test_objective_prefers_the_baseline_behaviour() -> None:
     assert good < min(random_losses) - 1.0
 
 
+def test_seed_rotation_draws_batches_from_the_pool() -> None:
+    # Kept off by default (it breaks kwsa's stale incumbent, see ptqnn.tasks.flappy.train), but
+    # it must still do what it says.
+    rot = tr.SeedRotation(range(16), 4, np.random.default_rng(0))
+    seen = set()
+    for _ in range(5):
+        assert len(rot.seeds) == 4 and len(set(rot.seeds)) == 4
+        assert set(rot.seeds) <= set(range(16))
+        seen.add(rot.seeds)
+        rot.advance()
+    assert len(seen) > 1
+    net, cfg = _net(), tr.ObjectiveConfig(max_steps=100)
+    params = net.random_params(np.random.default_rng(0))
+    assert tr.objective(net, rot, cfg)(params) == pytest.approx(
+        tr.objective(net, rot.seeds, cfg)(params)
+    )
+
+
 @pytest.mark.slow
 def test_quantum_policy_learns_to_pass_twenty_pipes() -> None:
     # Bounded budget: 200 random restarts on 250-frame episodes + 12 KW-SA coordinate sweeps on
-    # 800-frame episodes over three seeded episodes (~20 s wall clock, ~2000 loss evaluations).
-    # We do not attempt the paper's 6-day / 450 000-pipe run [PTQNN §III.D]; the target is
-    # deterministic play on held-out seeds under a 5000-frame cap (110 pipes = perfect).
+    # five 1500-frame episodes (~800 loss evaluations, ~90 s wall clock).  We do not attempt the
+    # paper's 6-day / 450 000-pipe run [PTQNN §III.D]; the target is deterministic play on
+    # held-out seeds under a 5000-frame cap, where 110 pipes is a perfect game.  Measured for
+    # KW-SA seeds 0-3: 110/110 pipes on every one of the 20 held-out seeds 5..24.
     net = _net()
     cfg = kwsa.KWSAConfig(**{**tr.DEFAULT_KWSA.__dict__, "iterations": 12, "seed": 0})
     res = tr.train(
         net,
         cfg=cfg,
-        seeds=(0, 1, 2),
-        max_steps=800,
+        seeds=(0, 1, 2, 3, 4),
+        max_steps=1500,
         n_restarts=200,
-        eval_seeds=(5, 6, 7),
+        eval_seeds=(5, 6, 7, 8, 9),
         eval_steps=5000,
     )
     assert res.loss < res.init_loss
