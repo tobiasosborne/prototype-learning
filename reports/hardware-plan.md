@@ -1,3 +1,5 @@
+> **Warning (review 002, blocker 1):** several numbers in this report were found inconsistent with the run data they should derive from (TVD per device, P(out=1), 'lowest 2q error', the 2^{n+1}−2n−2 count, SWAP fractions, the Garnet T2 sentence, one $ figure). Treat quantitative claims as unverified until regenerated from `experiments/runs/bitcount_noise/*/results.json` and `reports/hardware-compile-table.md`. The per-vendor paths, decomposition identities and checklist are unaffected.
+
 # Hardware plan — running the prototype QNNs on real devices
 
 Status: v1, 2026-08-20 (PLAN.md §1 item 4, phase P10).  Calibration numbers come from

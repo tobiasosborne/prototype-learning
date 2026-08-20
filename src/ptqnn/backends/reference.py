@@ -59,7 +59,7 @@ def superoperator(kraus: Sequence[Complex]) -> Complex:
     of the channel's own ``d × d`` block, since ``vec(A X B) = (A ⊗ Bᵀ) vec(X)``."""
     # Accumulate in the array module of the inputs (NumPy or CuPy); a NumPy zeros seed would
     # break GPU dispatch (reviews/002 blocker 2).
-    s: Complex = np.kron(kraus[0], kraus[0].conj())
+    s: Complex = np.asarray(np.kron(kraus[0], kraus[0].conj()))
     for k in kraus[1:]:
         s = s + np.kron(k, k.conj())
     return s

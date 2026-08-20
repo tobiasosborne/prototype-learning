@@ -1,6 +1,6 @@
 # STATE — single source of truth
 
-Updated: 2026-08-20 (session 1, in progress)
+Updated: 2026-08-20 (end of session 1)
 
 ## Phase status (see PLAN.md §3)
 
@@ -14,10 +14,10 @@ Updated: 2026-08-20 (session 1, in progress)
 | P5 Iris | done | acc 95/91/98 %; Fig 7 contrast reproduced; Fig 9 not; target ∝ (label+1)² from Fig 8 |
 | P6 Flappy Bird | done | perfect play (110 pipes = cap) on 20/20 held-out seeds; run 20260820T142739Z |
 | P7 ECG | done | Table I within ~2 dB; Fig 13 reproduced; runs 20260820T162014/T165910/T165912 |
-| P8 noise library + vendor presets | done (review 2 + Codex review running) | channels, NoiseModel (ASAP idle scheduling), Aer cross-check, 7 sourced device TOMLs |
-| P9 noisy experiments | bit-count done; 11q noise-aware + other tasks running | reports/noise.md; run 20260820T145335Z |
-| P10 hardware layer + plan | layer done; plan report pending | gatesets, decompositions, routing, QASM3, executors; reports/hardware-compile-table.md |
-| P11 final report | not started | |
+| P8 noise library + vendor presets | done; reviews 001/002/002b applied (see reviews/) | channels, NoiseModel (ASAP idle scheduling), Aer cross-check, 7 sourced device TOMLs |
+| P9 noisy experiments | bit-count done (11q eval, 7q noise-aware); 11q noise-aware NOT run (≈1.3 h/cell); Flappy + ECG/Iris noise runs: see worklog | reports/noise.md |
+| P10 hardware layer + plan | layer done; plan report written but review-002 blocker 1 OPEN (numbers to regenerate) | gatesets, decompositions, routing, QASM3, executors; reports/hardware-compile-table.md |
+| P11 final report | partial | reports/reproduction.md complete for all 4 experiments; noise.md bit-count only |
 
 ## Reproduction scoreboard (paper value → ours)
 
