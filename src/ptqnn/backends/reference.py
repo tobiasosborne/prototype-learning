@@ -82,6 +82,8 @@ def apply_op_dm(rho: Complex, op: Op, n: int) -> Complex:
 def run_statevector(circuit: Circuit, psi0: Complex | None = None) -> Complex:
     """Exact pure-state evolution; raises if the circuit contains a non-unitary channel."""
     n = circuit.n_qubits
+    if psi0 is None:
+        psi0 = circuit.initial_state
     psi = zero_state(n) if psi0 is None else np.asarray(psi0, dtype=np.complex128).copy()
     for op in circuit.ops:
         if not isinstance(op, Gate):
@@ -92,6 +94,8 @@ def run_statevector(circuit: Circuit, psi0: Complex | None = None) -> Complex:
 
 def run_density_matrix(circuit: Circuit, rho0: Complex | None = None) -> Complex:
     n = circuit.n_qubits
+    if rho0 is None and circuit.initial_state is not None:
+        rho0 = np.outer(circuit.initial_state, circuit.initial_state.conj())
     rho = zero_density_matrix(n) if rho0 is None else np.asarray(rho0, dtype=np.complex128).copy()
     for op in circuit.ops:
         rho = apply_op_dm(rho, op, n)

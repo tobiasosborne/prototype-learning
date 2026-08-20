@@ -186,11 +186,23 @@ class Circuit:
 
     n_qubits: int
     ops: list[Op] = field(default_factory=list)
+    initial_state: Complex | None = None
+    """Optional normalised statevector the circuit starts from instead of ``|0…0⟩`` — used to
+    load a whole dataset as a superposition ("quantum state preparation can be used, as suggested
+    in [8, 20, 21]" ``[PTQNN §III.C]``).  Backends that cannot prepare arbitrary states must
+    synthesise it; simulators just start from it."""
 
     def __post_init__(self) -> None:
         ops, self.ops = list(self.ops), []
         for op in ops:
             self.append(op)
+        if self.initial_state is not None:
+            v = _as_complex(self.initial_state).ravel()
+            if v.shape != (2**self.n_qubits,):
+                raise ValueError("initial_state has the wrong dimension")
+            if not np.isclose(np.vdot(v, v).real, 1.0, atol=_ATOL):
+                raise ValueError("initial_state is not normalised")
+            self.initial_state = v
 
     def append(self, op: Op) -> Circuit:
         for q in op.qubits:

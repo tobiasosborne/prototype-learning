@@ -35,7 +35,7 @@ def test_kwsa_minimises_quadratic_deterministically() -> None:
     def f(x: np.ndarray) -> float:
         return float(np.sum((x - target) ** 2))
 
-    cfg = kwsa.KWSAConfig(iterations=200, a0=0.2, c0=0.1, t0=0.0, seed=1)
+    cfg = kwsa.KWSAConfig(iterations=200, a0=0.2, c0=0.1, t0=0.0, seed=1, mode="full")
     res = kwsa.minimise(f, np.zeros(3), cfg)
     assert res.loss < 1e-3
     np.testing.assert_allclose(res.params, target, atol=0.05)
@@ -61,14 +61,27 @@ def test_kwsa_escapes_local_minimum_with_annealing() -> None:
         t = float(x[0])
         return min((t + 1) ** 2 + 0.5, (t - 1.2) ** 2)
 
-    cold = kwsa.minimise(f, np.array([-1.0]), kwsa.KWSAConfig(iterations=300, t0=0.0, seed=3))
+    cold = kwsa.minimise(
+        f, np.array([-1.0]), kwsa.KWSAConfig(iterations=300, t0=0.0, seed=3, mode="full")
+    )
     hot = kwsa.minimise(
         f,
         np.array([-1.0]),
-        kwsa.KWSAConfig(iterations=400, t0=1.0, cooling=0.99, jitter=1.0, seed=3),
+        kwsa.KWSAConfig(iterations=400, t0=1.0, cooling=0.99, jitter=1.0, seed=3, mode="full"),
     )
     assert cold.loss == pytest.approx(0.5, abs=0.05)
     assert hot.loss < 0.05
+
+
+def test_kwsa_coordinate_mode_minimises_quadratic() -> None:
+    target = np.array([0.3, -1.2, 2.0])
+
+    def f(x: np.ndarray) -> float:
+        return float(np.sum((x - target) ** 2))
+
+    res = kwsa.minimise(f, np.zeros(3), kwsa.KWSAConfig(iterations=30, a0=0.5, c0=0.1, seed=1))
+    assert res.loss < 1e-4
+    assert res.evaluations == 1 + 30 * 3 * 3
 
 
 def test_backends_expose_probabilities_protocol() -> None:

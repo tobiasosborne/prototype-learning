@@ -225,8 +225,9 @@ SINGLE_Q_GATES: list[tuple[str, tuple[float, ...], np.ndarray]] = [
 
 @pytest.mark.parametrize("kind", ALL_TYPES)
 @pytest.mark.parametrize(("name", "args", "mat"), SINGLE_Q_GATES, ids=lambda a: str(a))
-def test_single_qubit_gates(kind: ffi.StateType, name: str, args: tuple[float, ...],
-                            mat: np.ndarray) -> None:
+def test_single_qubit_gates(
+    kind: ffi.StateType, name: str, args: tuple[float, ...], mat: np.ndarray
+) -> None:
     n = 3
     for q in range(n):
         with ffi.OrkanState.zero(n, kind) as st:
@@ -408,9 +409,8 @@ def test_kraus_1q(kind: ffi.StateType, label: str, kraus: list[np.ndarray]) -> N
 
 
 def test_kraus_rejects_pure() -> None:
-    with ffi.OrkanState.zero(3, ffi.StateType.PURE) as st:
-        with pytest.raises(ffi.OrkanTypeError):
-            st.apply_kraus_1q(0, amplitude_damping(0.1))
+    with ffi.OrkanState.zero(3, ffi.StateType.PURE) as st, pytest.raises(ffi.OrkanTypeError):
+        st.apply_kraus_1q(0, amplitude_damping(0.1))
 
 
 def test_kraus_rejects_non_cptp_shape() -> None:

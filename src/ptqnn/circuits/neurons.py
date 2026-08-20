@@ -123,10 +123,16 @@ class Network:
         tail = p[self.n_hidden * k :]
         return hidden, (tail[: self.n_hidden], float(tail[self.n_hidden]))
 
-    def circuit(self, params: npt.ArrayLike, prep: Sequence[ir.Op] = ()) -> ir.Circuit:
-        """Full circuit: optional input preparation ``prep``, hidden layer, output neuron."""
+    def circuit(
+        self,
+        params: npt.ArrayLike,
+        prep: Sequence[ir.Op] = (),
+        initial_state: npt.NDArray[np.complex128] | None = None,
+    ) -> ir.Circuit:
+        """Full circuit: optional input preparation ``prep`` (gates) or ``initial_state``
+        (a statevector on all ``n_qubits``), hidden layer, output neuron."""
         hidden, (w_out, b_out) = self.unpack(params)
-        circ = ir.Circuit(self.n_qubits)
+        circ = ir.Circuit(self.n_qubits, initial_state=initial_state)
         circ.extend(prep)
         for hq, (angles, last) in zip(self.hidden_qubits, hidden, strict=True):
             if self.hidden == "prototype":

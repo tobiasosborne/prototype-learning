@@ -13,8 +13,13 @@ Neither paper publishes ``a_n``, ``c_n``, ``T_t`` or ``k``.  ``[ASSUMPTION]`` �
 
 * ``a_n = a0 / (n+1)^alpha``, ``c_n = c0 / (n+1)^gamma`` with the classical KW exponents
   ``alpha = 0.602``, ``gamma = 0.101`` (Spall's recommended values; the paper says nothing).
-* the candidate is ``x̂ = x − a_n ĝ + jitter·N(0, 1)``: a descent step on the central-difference
-  gradient ``ĝ`` (one pair of evaluations per coordinate) plus optional Gaussian exploration.
+* ``mode="coordinate"`` (default): one *iteration* is a sweep over all coordinates in random
+  order; for each coordinate the central difference ``±c_n`` is evaluated, the KW step
+  ``x_i − a_n ĝ_i`` is proposed, and the best of the three probes is put to the Metropolis rule.
+  Empirically this reproduces the "≈0 in under 10 iterations" of ``[PTQNN Fig 6]``; whole-vector
+  KW steps (``mode="full"``) need O(100) iterations on the same loss.
+* ``mode="full"``: the candidate is ``x̂ = x − a_n ĝ + jitter·T·N(0, 1)``, a descent step on the
+  full central-difference gradient plus optional Gaussian exploration.
 * geometric cooling ``T_{t+1} = cooling · T_t`` from ``t0``; ``k`` is the damping factor of Eq 3.
 * the loss is treated as "minimise" (the paper's ``+a_n`` is for maximisation of ``M``).
 
@@ -25,6 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -45,6 +51,7 @@ class KWSAConfig:
     k: float = 1.0
     jitter: float = 0.0
     seed: int = 0
+    mode: Literal["coordinate", "full"] = "coordinate"
 
 
 @dataclass
@@ -80,28 +87,47 @@ def minimise(
     x0: Params,
     cfg: KWSAConfig,
     callback: Callable[[int, Params, float], None] | None = None,
+    start_iteration: int = 0,
 ) -> KWSAResult:
+    """Run ``cfg.iterations`` KW–SA steps from ``x0``; the schedule index starts at
+    ``start_iteration`` so callers can resume or interleave runs.  Returns the best point seen."""
     rng = np.random.default_rng(cfg.seed)
     x = np.asarray(x0, dtype=np.float64).copy()
     fx = f(x)
     best_x, best_f = x.copy(), fx
     res = KWSAResult(params=x, loss=fx, history=[fx], evaluations=1)
-    temperature = cfg.t0
-    for n in range(cfg.iterations):
+    temperature = cfg.t0 * cfg.cooling**start_iteration
+    for n in range(start_iteration, start_iteration + cfg.iterations):
         a_n = cfg.a0 / (n + 1) ** cfg.alpha
         c_n = cfg.c0 / (n + 1) ** cfg.gamma
-        g, ev = kw_gradient(f, x, c_n)
-        res.evaluations += ev
-        cand = x - a_n * g
-        if cfg.jitter > 0:
-            cand = cand + cfg.jitter * temperature * rng.normal(size=x.size)
-        fc = f(cand)
-        res.evaluations += 1
-        if accept(fc - fx, temperature, cfg.k, rng):
-            x, fx = cand, fc
-            res.accepted += 1
-            if fx < best_f:
-                best_x, best_f = x.copy(), fx
+        if cfg.mode == "coordinate":
+            for i in rng.permutation(x.size):
+                e = np.zeros_like(x)
+                e[i] = c_n
+                fp, fm = f(x + e), f(x - e)
+                step = np.zeros_like(x)
+                step[i] = -a_n * (fp - fm) / (2 * c_n)
+                fs = f(x + step)
+                res.evaluations += 3
+                fc, cand = min((fp, x + e), (fm, x - e), (fs, x + step), key=lambda t: t[0])
+                if accept(fc - fx, temperature, cfg.k, rng):
+                    x, fx = cand, fc
+                    res.accepted += 1
+                    if fx < best_f:
+                        best_x, best_f = x.copy(), fx
+        else:
+            g, ev = kw_gradient(f, x, c_n)
+            res.evaluations += ev
+            cand = x - a_n * g
+            if cfg.jitter > 0:
+                cand = cand + cfg.jitter * temperature * rng.normal(size=x.size)
+            fc = f(cand)
+            res.evaluations += 1
+            if accept(fc - fx, temperature, cfg.k, rng):
+                x, fx = cand, fc
+                res.accepted += 1
+                if fx < best_f:
+                    best_x, best_f = x.copy(), fx
         temperature *= cfg.cooling
         res.history.append(fx)
         if callback is not None:

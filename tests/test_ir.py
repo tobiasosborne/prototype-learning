@@ -87,3 +87,18 @@ def test_dagger_inverts() -> None:
     g = ir.crx(0, 1, 0.9)
     np.testing.assert_allclose(g.dagger().matrix @ g.matrix, np.eye(4), atol=1e-14)
     assert ir.rx(0, 0.4).dagger().params == (-0.4,)
+
+
+def test_circuit_initial_state_validated_and_used() -> None:
+    from ptqnn.backends import reference as ref
+
+    v = np.zeros(4, dtype=complex)
+    v[3] = 1.0
+    c = ir.Circuit(2, [ir.x(0)], initial_state=v)
+    np.testing.assert_allclose(ref.run_statevector(c), [0, 1, 0, 0])
+    rho = ref.run_density_matrix(c)
+    assert rho[1, 1] == pytest.approx(1.0)
+    with pytest.raises(ValueError, match="normalised"):
+        ir.Circuit(2, initial_state=np.array([1, 1, 0, 0]))
+    with pytest.raises(ValueError, match="dimension"):
+        ir.Circuit(2, initial_state=np.array([1, 0]))

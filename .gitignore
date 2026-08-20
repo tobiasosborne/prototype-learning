@@ -13,3 +13,4 @@ experiments/runs/
 dist/
 literature/figs/
 literature/snn-figs/
+experiments/runs/codex/*.jsonl
