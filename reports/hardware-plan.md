@@ -1,0 +1,327 @@
+# Hardware plan — running the prototype QNNs on real devices
+
+Status: v1, 2026-08-20 (PLAN.md §1 item 4, phase P10).  Calibration numbers come from
+`src/ptqnn/noise/devices/*.toml` (retrieved 2026-08-20, per-field provenance with verbatim
+quotes; `devices/README.md` lists what is sourced and what is missing).  Gate counts come from
+`reports/hardware-compile-table.md` and from `transpile.compile_for` run against the real
+`DeviceSpec`s.  Nothing here has been submitted to a QPU; no credentials exist in this repo.
+
+---
+
+## 1. Per-experiment resources
+
+### 1.1 Logical circuits
+
+Sizes from `docs/physics/rosenhahn_hirche_ptqnn.md`: bit-count 11 q (Fig 5) / 12 q (Fig 4);
+Flappy 7 q (Fig 10); ECG 7/8/9 q (Fig 12, 1–3 prototypes); Iris 12 input qubits + hidden + output
+⇒ 17–25 q *plus* dataset state preparation (§4.1).  One CRX per (input, hidden) pair plus one per
+hidden→output edge; each CRX costs **2 native entanglers** (`transpile` docstring, exact identity).
+
+| experiment | qubits | logical depth | CRX | 1q |
+|---|---:|---:|---:|---:|
+| Flappy `Network(2,4)` | 7 | 13 | 12 | 17 |
+| ECG 1 prototype `Network(5,1)` | 7 | 7 | 6 | 11 |
+| ECG 2 prototypes `Network(5,2)` | 8 | 10 | 12 | 21 |
+| ECG 3 prototypes `Network(5,3)` | 9 | 13 | 18 | 31 |
+| bit-count `Network(5,5)` | 11 | 19 | 30 | 51 |
+| bit-count `Network(5,6)` | 12 | 22 | 36 | 61 |
+| Iris `Network(12,4)` | 17 | 23 | 52 | 97 |
+| Iris `Network(12,12)` | 25 | 47 | 156 | 289 |
+
+### 1.2 After transpilation (our transpiler, per real device preset)
+
+`n_2q` = native entanglers including 3 per routed SWAP; `t_crit` = ASAP critical path from the
+preset's gate durations.  Routing is **greedy nearest-neighbour** (`transpile.route`) — see §3.2
+for what qiskit's SABRE does instead.
+
+| experiment | H1-1 / H2-1 (all-to-all) | IonQ Forte (all-to-all) | ibm_fez (heavy-hex) | IQM Garnet (square) | Ankaa-3 (square) |
+|---|---|---|---|---|---|
+| Flappy 7 q | 24 · d36 · — | 24 · d62 · 17.9 ms | 90 (22 SWAP) · d297 · 11.3 µs | 63 (13) · d182 · 6.8 µs\* | 63 (13) · d218 · 10.3 µs\* |
+| ECG 7 q | 12 · d36 · — | 12 · d62 · 17.9 ms | 57 (15) · d193 · 7.4 µs | 42 (10) · d133 | 42 (10) · d153 |
+| ECG 9 q | 36 · d48 · — | 36 · d82 · 23.8 ms | 174 (46) · d432 · 16.7 µs | 123 (29) · d341 | 123 (29) · d375 |
+| bit-count 11 q | 60 · d60 · — | 60 · d102 · 29.7 ms | 327 (89) · d677 · 26.3 µs | 207 (49) · d485 · 18.1 µs\* | 207 (49) · d534 · 25.4 µs\* |
+| bit-count 12 q | 72 · d66 · — | 72 · d112 · 32.6 ms | 438 (122) · d799 · 31.0 µs | 276 (68) · d605 | 276 (68) · d650 |
+| Iris 17 q (network only) | 104 · d96 · — | 104 · d162 · 47.3 ms | 800 (232) · d997 · 38.4 µs | 578 (158) · d901 | 578 (158) · d952 |
+| Iris 25 q (network only) | 312 · d144 (H2 only) | 312 · d242 · 70.8 ms | 2949 (879) · d3325 · 129 µs | > 20 q | 2004 (564) · d2752 · 49 µs\* |
+
+\* IQM publishes no 1q duration and Rigetti none at all; `t_crit` uses the `[ASSUMPTION]` 40 ns
+PRX bound from IQM's Radiance sheet and 40 ns for Rigetti's ±π/2 RX.  Quantinuum publishes **no
+gate durations**, so H1/H2 have no `t_crit` — a hole in any duration-based error budget.
+
+### 1.3 Shot budgets — formulas
+
+**(a) An activation `P(out = 1) = p`.**  `p̂ = k/N`, binomial, `σ = √(p(1−p)/N) ≤ 1/(2√N)`, so
+for a 1-σ absolute precision `ε`:  **`N ≥ 1/(4ε²)`**.
+
+| ε | 0.05 | 0.01 | 0.005 | 0.003 | 0.001 |
+|---|---:|---:|---:|---:|---:|
+| N | 100 | 2 500 | 10 000 | 27 778 | 250 000 |
+
+**(b) The 32-bin bit-count histogram / KL.**  The model distribution is `P(x | out = 1)` over
+`K = 2⁵ = 32` bins `[PTQNN Eq 4]`, so only `out = 1` shots count: `N_eff = N · P(out = 1)`, and
+our trained model (retrained from `experiments/runs/bitcount/20260820T135930Z`, seed 1,
+KL = 5.47e-4) has **`P(out = 1) = 0.4871`**.  Target and estimate are both normalised, so the
+first-order term of `KL(t ‖ m̂)` vanishes and to second order
+`KL̂ ≈ ½ Σᵢ (m̂ᵢ − tᵢ)²/tᵢ ~ χ²_{K−1}/(2 N_eff)`, hence
+
+> **shot-noise KL floor  `E[KL̂] = (K−1)/(2 N_eff) = 31 / (2·0.4871·N) = 31.8 / N`**,
+> with s.d. `√(2(K−1))/(2N_eff) = 3.94/N_eff`.
+
+| KL floor wanted | 5e-3 | 1e-3 | 5.5e-4 (our converged KL) |
+|---|---:|---:|---:|
+| shots N | 6 400 | 31 800 | **≈ 64 000** |
+
+**(c) ECG.**  `PSNR = 10 log₁₀(1/MSE)` for a signal in [0,1] `[PTQNN Eq 6]`; shot noise alone
+contributes `MSE_shot ≤ 1/(4N)`, so the **PSNR ceiling is `10 log₁₀(4N)`**: 2 500 shots per
+window sample caps you at exactly 40.0 dB — the Table I number — and you need ~25 000 shots per
+sample to push the shot-noise floor 10 dB below it.  At 1 800 samples that is **4.5 × 10⁷ shots**
+per denoised trace.  ECG is therefore a simulator experiment, not a hardware one.
+
+**(d) Flappy decision.**  The policy flaps iff `p > ½`; a frame with margin `δ = |p − ½|` flips
+with probability `Φ(−2δ√N)`.  Over 2 000 frames of the trained agent
+(`experiments/runs/flappy/20260820T143753Z/params.npy`): **median δ = 0.020**, 10th pct 0.0042,
+1st pct 0.00068.  Mean flip probability per frame:
+
+| N | 100 | 200 | 1 000 | 4 000 | 10 000 | 100 000 |
+|---|---:|---:|---:|---:|---:|---:|
+| P(flip) | 0.35 | 0.30 | 0.16 | 0.077 | 0.048 | 0.014 |
+
+The boundary is *thin*: even at 10⁵ shots/frame one decision in 74 flips from shot noise alone,
+before any device error.  **"Perfect play" is not a reachable hardware deliverable.**  The
+reachable one is the *activation map* — `P(out=1)` on a grid of observations, against simulator
+and noise model: same circuit, a few dozen jobs, falsifiable.
+
+---
+
+## 2. Per-vendor path
+
+### 2.1 Access, SDK, adapter, native set
+
+| vendor / device | access route | SDK | our adapter | native set (`gatesets.py`) | what we emit |
+|---|---|---|---|---|---|
+| IBM `ibm_fez` (Heron r2) | IBM Quantum Platform / Qiskit Runtime; **Open plan free, 10 min QPU / 28 d** ([docs](https://quantum.cloud.ibm.com/docs/en/guides/plans-overview)) | `qiskit-ibm-runtime` (not installed) | `IBMRuntimeExecutor` — **dry run only**; builds the real ISA circuit | `rz, sx, x` / `cz` | ZXZXZ Euler: 5 1q, 2 SX per run; CX = (I⊗H)·CZ·(I⊗H) |
+| Quantinuum H1-1 (20 q) / H2-1 (56 q) | Quantinuum Nexus (`qnexus`) or Azure Quantum; emulators H1-1E/H2-1E consume HQCs too | `pytket` + `pytket-quantinuum` (not installed) | `QuantinuumExecutor` — **stub**, lists the four missing pieces | `u1q, rz` / `zz, rzz` | `RZ(a+c)·U1q(b, π/2−c)` — 2 1q gates per run; 1 RZZ per CX |
+| IonQ Forte (36 q) | Amazon Braket (`arn:…/qpu/ionq/Forte-1`), IonQ Quantum Cloud direct, or Azure Quantum | `amazon-braket-sdk` (not installed) | `BraketExecutor` — **stub** | `gpi, gpi2` / `zz` (Forte; MS is Aria) | 4 1q gates per run (`GPI2·GPI2·GPI·GPI`); 1 ZZ per CX |
+| IQM Garnet (20 q) | Amazon Braket, or IQM Resonance direct (free tier 30 credits/mo) | `amazon-braket-sdk` / `iqm-client` | `BraketExecutor` — **stub** | `prx` / `cz` | 3 PRX per run (no native RZ!) |
+| Rigetti Ankaa-3 (84 q) | Amazon Braket, or Rigetti QCS | `amazon-braket-sdk` | `BraketExecutor` — **stub** | `rx, rz` / `iswap` (verbatim), `cz` legacy | **we synthesise CZ, not iSWAP** — a verbatim Ankaa-3 job needs Rigetti's own rebase |
+| Google Willow | **no access.** "Willow Early Access Program … currently not available to the public"; proposals closed 2026-05-15 ([TQI](https://thequantuminsider.com/2026/03/28/google-opens-early-access-to-willow-quantum-processor-invites-experimental-proposals/)) | — | — | `xy_microwave, virtual_z` / `cz` | preset exists for simulation only |
+
+Common path for everything except IBM: `qasm.to_openqasm3` (Braket accepts OpenQASM 3; the
+non-standard names carry exact `gate` definitions).  Bit-string order is `qubit 0 leftmost`,
+matching `[PTQNN Fig 5]`; `counts_from_qasm` un-reverses vendor keys.
+
+### 2.2 Expected circuit fidelity — the arithmetic
+
+Model: `F ≈ Π_gates (1 − ε_g) · Π_qubits (1 − ε_idle) · Π_qubits (1 − ε_ro)` — the standard
+multiplicative EPLG-style estimate.  Idle error per qubit is the average-gate-infidelity of
+thermal relaxation over the critical path `t`: `λ = e^{−t/T1}`, `Λ = e^{−t/T2}`,
+`F_avg = ½ + (2Λ + λ)/6`.  Where no T1/T2 is published (Quantinuum) we substitute the *Memory
+Error per Depth-1 Circuit Time* `m` and charge `(1−m)^(n_qubits · depth)` `[ASSUMPTION]`.
+
+**Flappy, 7 q** (numbers from the TOMLs; counts from §1.2):
+
+| device | F(2q) | F(1q) | F(idle) | F(readout) | **F** | simulator TVD |
+|---|---:|---:|---:|---:|---:|---:|
+| Quantinuum H2-1 | `0.9989^24 = 0.9739` | `0.999981^87 = 0.9983` | `0.9998^(7·36) = 0.9508` | `0.999^7 = 0.9930` | **0.918** | 0.020 |
+| Quantinuum H1-1 | `0.99903^24 = 0.9770` | `0.999982^87 = 0.9984` | `0.99978^(7·36) = 0.9461` | `0.9977^7 = 0.9840` | **0.908** | 0.022 |
+| IonQ Forte | `0.996^24 = 0.9083` | `0.9998^204 = 0.9600` | `t = 17.9 ms`, `T2 = 1 s` → 0.9590 | `0.995^7 = 0.9655` | **0.807** | 0.117 |
+| ibm_fez (SABRE, §3.2) | `0.99610^37 = 0.8653` | `0.999771^99 = 0.9776` | `t = 3.17 µs` → 0.8971 | `0.99243^7 = 0.9482` | **0.720** | — |
+| ibm_fez (our greedy router) | `0.99610^90 = 0.7033` | `0.999771^553 = 0.8812` | `t = 11.3 µs` → 0.6846 | 0.9482 | **0.402** | 0.350 |
+| IQM Garnet | `0.9951^63 = 0.7338` | `0.9992^282 = 0.7980` | `t = 6.8 µs`, `T2ₑ = 21 µs` → 0.3824 | `0.97^7 = 0.8080` | **0.181** | 0.406 |
+| Rigetti Ankaa-3 | `0.99^63 = 0.5309` | no 1q error published | no T1/T2 published | no readout published | **≤ 0.53** | 0.304† |
+
+**bit-count, 11 q:**
+
+| device | F(2q) | F(1q) | F(idle) | F(readout) | **F** | simulator TVD |
+|---|---:|---:|---:|---:|---:|---:|
+| Quantinuum H2-1 | `0.9989^60 = 0.9361` | 0.9959 | `0.9998^(11·60) = 0.8763` | `0.999^11 = 0.9891` | **0.808** | 0.034 |
+| Quantinuum H1-1 | `0.99903^60 = 0.9434` | 0.9961 | 0.8648 | 0.9750 | **0.792** | 0.035 |
+| IonQ Forte | `0.996^60 = 0.7862` | `0.9998^504 = 0.9041` | `t = 29.7 ms` → 0.8970 | 0.9464 | **0.603** | — |
+| ibm_fez (SABRE) | `0.99610^97 = 0.6843` | `0.999771^280 = 0.9380` | `t = 6.05 µs` → 0.7237 | 0.9198 | **0.427** | — |
+| ibm_fez (greedy) | `0.99610^327 = 0.2783` | 0.6318 | 0.2647 | 0.9198 | **0.043** | — |
+| IQM Garnet | `0.9951^207 = 0.3618` | 0.4553 | `t = 18.1 µs > T2ₑ` → 0.030 | 0.7153 | **0.004** | — |
+| Rigetti Ankaa-3 | `0.99^207 = 0.1249` | — | — | — | **≤ 0.12** | — |
+
+Cross-check: density-matrix simulation of the *compiled* circuit under `DeviceSpec.noise_model()`
+(`noise.model.NoisyBackend`) gives the listed total-variation distance from the ideal output.
+† Rigetti's simulated TVD is an *underestimate*: its preset carries only the iSWAP error — no
+1q, no readout, no T1/T2.
+
+### 2.3 Cost per shot and per job
+
+Vendor pricing retrieved 2026-08-20.  A "job" below is one circuit at the stated shot count.
+
+| device | pricing formula | source | Flappy 7 q, 4 000 shots | bit-count 11 q, 64 000 shots | $/shot |
+|---|---|---|---:|---:|---:|
+| IBM PAYG | **$96/min** ( = $1.60/s) of QPU runtime; Flex $72/min (≥ $30 000 prepay); Premium ≈ $48/min | [QCR 2026-03-20](https://quantumcomputingreport.com/ibm-offers-special-promotion-to-open-plan-users/) — **secondary source**, `ibm.com/quantum/pricing` 403s. `[ASSUMPTION]` | 45 ms QPU ⇒ ≈ **$3–8** with job overhead | 1.7 s QPU ⇒ ≈ **$10–30** | ~2e-5 |
+| IBM Open | free, 10 min / 28 d rolling | [IBM docs](https://quantum.cloud.ibm.com/docs/en/guides/plans-overview) | **$0** | **$0** | 0 |
+| Quantinuum H1/H2 | `HQC = 5 + C·(N₁q + 10·N₂q + 5·N_m)/5000` (exactly the formula in `executor.cost_estimate`) | [Azure pricing](https://learn.microsoft.com/en-us/azure/quantum/pricing), [Nexus costing](https://docs.quantinuum.com/systems/trainings/helios/getting_started/costing.html) | 397/5000 ⇒ **322.6 HQC** | 926/5000 ⇒ **11 858 HQC** | 0.079 / 0.185 HQC |
+| — in USD | **no published $/HQC** (PAYG is "contact Sales@Quantinuum.com"); Azure Standard $125 000/mo → 10 000 HQC ⇒ **≈ $12.5/HQC** `[ASSUMPTION]` | Azure pricing page | ≈ **$4 000** | ≈ **$148 000** | ≈ $0.99 / $2.32 |
+| IonQ Forte (Braket) | $0.30/task + **$0.08/shot** | [AWS Braket pricing](https://aws.amazon.com/braket/pricing/) | **$320.30** | **$5 120** | 0.08 |
+| IonQ Forte (Azure AQT) | `$25.7899 + $0.0001645·N₁q·C + $0.001121·N₂q·C` (mitigation off) | [Azure pricing](https://learn.microsoft.com/en-us/azure/quantum/pricing) | **$267.6** | **$9 637** | 0.060 / 0.150 |
+| IQM Garnet (Braket) | $0.30/task + **$0.00145/shot**; IQM Resonance direct from $0.30/s, free tier 30 credits/mo | [AWS](https://aws.amazon.com/braket/pricing/), [IQM](https://iqm.tech/products/iqm-resonance/) | **$6.10** | **$93.10** | 0.00145 |
+| Rigetti | Ankaa-3 has **no current row** on the Braket pricing page; its successor Rigetti Cepheus-1-108Q is $0.30 + **$0.000425/shot**. Azure: $0.02 per 10 ms of job time | [AWS](https://aws.amazon.com/braket/pricing/), [AWS what's-new](https://aws.amazon.com/about-aws/whats-new/2026/04/amazon-braket-rigetti-cepheus) | ≈ $2.0 (Cepheus rate) | ≈ $27 | 0.000425 |
+| Braket reservations | IonQ Forte $7 000/h, IQM Garnet $3 000/h, Rigetti Cepheus $4 100/h | [AWS](https://aws.amazon.com/braket/pricing/) | — | — | — |
+
+**Queue / turnaround.**  Quantinuum runs a dynamic
+[Fair Queue](https://docs.quantinuum.com/systems/user_guide/hardware_user_guide/fair_queue.html)
+(priority from HQC accumulation and group weights, *no published wait time*) — plan hours-to-days
+and iterate on the H1-1E/H2-1E emulators.  IBM publishes no wait times either; a `Session` holds
+the QPU for a burst of jobs and is the only way to make a 100-job sweep tractable.  Braket QPUs
+have *availability windows* (IonQ/IQM/Rigetti are not online 24/7) and no published queue
+statistics; Braket Direct reservations buy a deterministic slot.  **No vendor publishes a
+turnaround commitment.**
+
+---
+
+## 3. Recommended order
+
+### 3.1 First: Flappy 7 q on an all-to-all trapped-ion machine
+
+The compile table settles it.  The prototype network is complete-bipartite (every input touches
+every hidden qubit), the worst possible fit for a lattice.  For Flappy: **24 entanglers and
+0 SWAPs** on H1/H2/Forte versus **90 and 22 SWAPs** on heavy-hex, **63 + 13** on a square
+lattice.  Routing overhead, not gate error, dominates — `n_2q = 2·n_CRX + 3·n_swap`, and on
+heavy-hex two thirds of the entanglers are SWAP.  Staged:
+
+1. **IBM Open plan, free, today.**  7 q fits; qiskit gets it to 37 CZ / depth 98 (§3.2) ⇒
+   F ≈ 0.72.  Zero cost, so this is where the M3 + ZNE pipeline gets debugged.  Deliverable:
+   `P(out=1)` on a 4×4 observation grid at 4 000 shots (16 jobs, ~1 s QPU total).
+2. **IonQ Forte via Braket, ≈ $1 285** for the same grid at 1 000 shots (16 × ($0.30 + $80)).
+   F ≈ 0.81, no SWAPs, no layout risk — the *confirmation* run.
+3. **Quantinuum H2-1: best number, worst price.**  F ≈ 0.92 and the lowest 2q error of any
+   preset (1.1e-3), but ≈ 322 HQC for one 4 000-shot job — worth it for the headline figure
+   only, and only with an allocation.  Dry-run on H2-1E first.
+
+ECG 7 q (`Network(5,1)`, 12 entanglers) is *cheaper* than Flappy and rides along in the same
+job — but §1.3(c) means hardware ECG is a single-window sanity check, not Table I.
+
+### 3.2 IBM Heron with SABRE — measured, not guessed
+
+Our router is greedy nearest-neighbour, no lookahead, no layout search (`transpile.route`).
+qiskit's own transpiler, via `IBMRuntimeExecutor.dry_run_payload` (heavy-hex patch, basis
+`rz,sx,x,cz`, seed 0):
+
+| circuit | our greedy router | qiskit O1 | qiskit **O2** | qiskit O3 |
+|---|---|---|---|---|
+| Flappy 7 q | 90 CZ, depth 297 | 45 CZ, d117 | **37 CZ, d98** | 37 CZ, d98 |
+| bit-count 11 q | 327 CZ, depth 677 | 129 CZ, d217 | **97 CZ, d184** | 107 CZ, d181 |
+
+SABRE + VF2 layout + 1q resynthesis buys **2.4× fewer entanglers on Flappy, 3.4× on bit-count**
+and 3–3.7× shallower circuits — in fidelity, 0.40 → **0.72** and 0.043 → **0.427**, the
+difference between "unusable" and "usable with mitigation".  **A real IBM submission must go
+through `qiskit.transpile(..., backend=<live backend>, optimization_level=2)`, never our
+router**, which stays the honest device-independent comparison instrument it was built to be
+(`IBMRuntimeExecutor` already does the right thing).  O3 is *worse* than O2 on bit-count — check
+both per circuit; O3's extra 1q merging does not pay when the 1q error is 17× below the 2q one.
+
+So bit-count 11 q **is feasible on Heron** at F ≈ 0.43: enough for a qualitative histogram (the
+32 bars span 6×, 0.0089…0.0536) but not for a KL comparison — device error alone puts the KL
+floor at 10⁻²–10⁻¹, two orders above our simulated 5.5e-4.  Run it as a *shape* demonstration.
+
+### 3.3 Iris is out of reach
+
+The network alone is 17 q / 104 entanglers on H2 — fine.  The input is not: `[PTQNN §III.C]`
+prepares *the whole dataset* as a superposition over 12 qubits, an arbitrary 2¹² = 4096-amplitude
+state.  Dense amplitude encoding (Möttönen/Shende) costs `2^{n+1} − 2n − 2 = 4 070` CNOTs; at
+H2-1's 1.1e-3 that is `0.9989^4070 ≈ 0.011`.  Exploiting sparsity (~100 training points carry
+amplitude) gives `O(k·n) ≈ 1 200` CNOTs and `0.9989^1200 ≈ 0.27`, before the network's 104.
+**Best case ≈ 0.25 fidelity, on the best machine available, with a state-preparation compiler we
+have not written** (`qasm.to_openqasm3` refuses circuits with an `initial_state`).  Iris stays a
+simulator experiment; the paper itself concedes state preparation of a dataset "can be a huge
+effort".
+
+---
+
+## 4. Error mitigation plan
+
+1. **Readout calibration (M3-style).**  Presets carry *directional* readout error for IBM
+   (`p01 = 3.91e-3`, `p10 = 1.15e-2`, a 3× asymmetry) and Quantinuum (`1.2e-3 / 3.4e-3`), so a
+   symmetric bit-flip model is known-wrong for both.  Plan: tensored single-qubit confusion
+   matrices from `2n` calibration circuits (14 Flappy, 22 bit-count) at 4 000 shots, then M3's
+   iterative-solve unfolding restricted to the *observed* subspace — never the full `2^n × 2^n`
+   inverse, which amplifies noise.  `ch.ReadoutError.apply` is the forward map to invert; the
+   inverse belongs in a new `ptqnn/hardware/mitigation.py`.  Readout is 5–8 % of the total error
+   budget on IBM/IonQ and ~25 % of the *residual* once the SABRE circuit is short.
+2. **ZNE by gate folding.**  Fold each native entangler `G → G G† G` for noise scales λ = 3, 5
+   (unitary folding preserves the ideal circuit exactly), fit `E(λ)` linearly/Richardson,
+   evaluate at λ = 0.  Validate the extrapolant *offline* first: `NoiseModel.scaled(λ)` rescales
+   depolarising `p`, `1/T1`, `1/T2` and readout together, so run simulated ZNE on the noisy
+   backend, check the extrapolated `P(out=1)` recovers the ideal, then fold on hardware.
+   Cost ×3.  Caveat: folding triples an already 30 ms IonQ circuit; on Quantinuum, where memory
+   error scales with depth, folding scales the idle error too — correct for ZNE, but say so.
+3. **Hardware fine-tuning with KW–SA.**  The paper's optimiser is gradient-free
+   (`[PTQNN §II.C, SNN §III.A]`, `ptqnn/train/kwsa.py`): Kiefer–Wolfowitz central differences
+   inside simulated annealing.  That is exactly what you want on a QPU — no parameter-shift, no
+   ancillas, one circuit per evaluation.  The cost is the evaluation count: one KW sweep is
+   `3·n_params` evaluations, and `Network(5,5)` has 36 parameters ⇒ 108 evaluations/sweep, 2 160
+   for our 20-sweep reproduction.  At 64 000 shots that is 1.4×10⁸ shots — **$11 M on Forte**.
+   So: *train in simulation, fine-tune on hardware.*  Freeze the prototype layers, re-tune only
+   the 6 output-neuron parameters: 18 evals/sweep × 5 sweeps × 4 000 shots = 3.6×10⁵ shots ≈
+   $29 000 on Forte, $520 on Garnet, ~free on IBM Open.  KW tolerates shot noise provided the
+   difference step `c_n` stays above it: with `σ_p ≈ 1/(2√N)` the finite-difference SNR is
+   `~ c_n·|∂p/∂θ|·2√N`, so `c_0 = 0.2` (`bitcount.SUPERPOSITION_CONFIG`) and `N = 4 000` give
+   SNR ≈ 25 at a typical `|∂p/∂θ| ≈ 0.5`.  A *static* device bias cancels in the central
+   difference and costs nothing; *drift between the two legs* does not — hence one job per pair
+   (§6).
+
+---
+
+## 5. What the code still lacks for a live submission
+
+| # | missing piece | where it goes | note |
+|---|---|---|---|
+| 1 | credentials plumbing (IBM token/CRN, Quantinuum login + API key, AWS keys + S3 bucket) | new `ptqnn/hardware/credentials.py`, env-var only, never in-repo | the three executors already enumerate exactly what is missing in their `NotImplementedError` text |
+| 2 | live `qiskit-ibm-runtime` submission + `SamplerV2` result → our counts | `executor.IBMRuntimeExecutor.run` | payload builder is done; needs the service handle and a **live** backend so the ISA circuit sees the real coupling map, not `heavy_hex_patch` |
+| 3 | **SABRE / vendor routing** as a first-class option | `transpile.route` (add `method="sabre"` delegating to qiskit) | §3.2: 2.4–3.4× fewer entanglers; our greedy router must not be used for submission |
+| 4 | **iSWAP synthesis** for Rigetti verbatim mode | `transpile._cx_in_gateset` | `CX = (1q)·iSWAP·(1q)·iSWAP·(1q)`; today we emit CZ and `RIGETTI_ANKAA.notes` says so. Also: RX is restricted to ±π/2, ±π, so `_synth_1q` must not emit arbitrary RX |
+| 5 | calibration pull (IBM `backend.properties()`, Braket `GetDevice.standardized`, IonQ `characterization_url`) | `ptqnn/noise/presets.py` + `devices/README.md` "How to refresh" | closes the T1/T2 holes for Rigetti and IQM and gives *per-qubit* data instead of one median |
+| 6 | job polling / async handles (`JobStatus`, retry, partial results) | new `ptqnn/hardware/jobs.py`; `Executor` protocol needs `submit()`/`result()` beside `run()` | Braket tasks and Quantinuum jobs are asynchronous; a synchronous `run()` cannot express a 6-hour queue |
+| 7 | result conversion for Braket/Quantinuum key orders | `qasm.counts_from_qasm` covers OpenQASM; pytket's `BackendResult` and Braket's `measurement_counts` need their own adapters | the reversal bug this guards against is silent |
+| 8 | M3 readout unfolding + ZNE folding | new `ptqnn/hardware/mitigation.py` | §4; `NoiseModel.scaled` is the simulator-side twin, already present |
+| 9 | sparse/dense state-preparation synthesis | `ptqnn/hardware/stateprep.py` | required for Iris; `to_openqasm3` currently raises on `initial_state` |
+| 10 | a real `$/HQC` and IBM `$/min` | `executor._SOURCES` + `cost_estimate` | both are `[ASSUMPTION]` today (§2.3); the IBM $1.60/s already in the code equals the $96/min secondary figure, which is corroboration, not confirmation |
+
+---
+
+## 6. Risks, and what the simulator predicts
+
+**Calibration drift between jobs.**  `ibm_fez.toml` records the same chip drifting from
+CZ 2.85e-3 @ 68 ns (2024-07-04) to 3.90e-3 @ 84 ns (2025-02-26) to 2.61e-3 live — a 1.5× swing.
+A KW central difference whose two legs land in different calibration windows measures drift, not
+gradient.  Mitigation: submit `θ±c` in the *same* job; re-measure a fixed reference circuit at
+the top and bottom of every sweep.
+
+**Crosstalk is in none of our presets.**  `devices/README.md`: no device has a usable
+`idle.zz_coupling_khz`.  IBM's 2q error is measured in *isolation* and therefore excludes
+simultaneous-gate crosstalk — so §2.2 is optimistic for a wide, parallel circuit, and the
+prototype network is exactly that (all hidden qubits driven at once).  IBM's own
+EPLG₁₀₀ = 4.54e-3 for `ibm_fez` against a median isolated CZ of 2.61e-3 sizes the gap: **~1.7×**.
+
+**Trapped-ion duration vs dephasing.**  Forte's 950 µs ZZ makes the 11 q bit-count a **29.7 ms**
+circuit against T2 ≈ 1 s — 3 % of a coherence time, tolerable, but ZNE at λ=5 pushes it to
+150 ms.  Quantinuum publishes *no* gate durations, only a Memory Error per Depth-1 Circuit Time
+(2.0e-4, H2-1); over 11 qubits × 60 layers that is a **12 % idle error**, larger than the entire
+2q budget (6 %).  On H-series, minimise *depth*, not entangler count.
+
+**IBM heavy-hex routing overhead.**  §3.2: with our router 67 % (Flappy) / 73 % (bit-count) of
+entanglers are SWAP; with SABRE, ~35 %.  Structural — a complete-bipartite logical graph on a
+degree-3 lattice — and the single largest lever on any superconducting device, worth 2.4–3.4×.
+
+**Rigetti and IQM.**  Ankaa-3's preset has *only* a 2q error, and its 99.5 % headline is the
+fSim gate, not the universal iSWAP (99.0 %) we would use — a 2× optimism trap.  Garnet's
+T2-echo (21 µs) is shorter than our routed bit-count critical path (18 µs), so the 11 q circuit
+is dead there (F ≈ 0.004); its T2-Ramsey is 8.5 µs, so even Flappy is marginal.  Neither is a
+candidate.
+
+**What the simulator predicts.**  The noise study was still in flight when this was written
+(`experiments/runs/bitcount_noise/20260820T145335Z` exists but is empty); `reports/noise.md`
+will decide (a) how far the KL of the trained bit-count model degrades under each preset and
+whether the 32-bar *shape* survives, (b) whether training *under* noise beats training clean and
+evaluating noisy, and (c) whether prototype degrades more gracefully than classic.  What this
+report's own device-level simulation already says: on the 11 q bit-count under the
+Quantinuum H1-1 preset the output distribution moves by **TVD 0.035** (H2-1: 0.034) while `P(out=1)` moves by
+only **0.0006** (0.4813 → 0.4807) — the marginal is far more robust than the joint distribution,
+which is good news for Flappy and ECG (marginal-based) and bad news for bit-count (joint,
+32-bin, KL).  Expect the hardware bit-count histogram to be visibly flattened toward uniform on
+every superconducting device and recognisable on H1/H2 and Forte.
