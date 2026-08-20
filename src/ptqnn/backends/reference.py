@@ -57,9 +57,10 @@ def apply_gate_sv(psi: Complex, gate: Gate, n: int) -> Complex:
 def superoperator(kraus: Sequence[Complex]) -> Complex:
     """``S = Σ_i K_i ⊗ K_i*`` acting on the row-major vectorisation ``vec(X)[a·d + b] = X[a, b]``
     of the channel's own ``d × d`` block, since ``vec(A X B) = (A ⊗ Bᵀ) vec(X)``."""
-    d2 = kraus[0].shape[0] ** 2
-    s: Complex = np.zeros((d2, d2), dtype=np.complex128)
-    for k in kraus:
+    # Accumulate in the array module of the inputs (NumPy or CuPy); a NumPy zeros seed would
+    # break GPU dispatch (reviews/002 blocker 2).
+    s: Complex = np.kron(kraus[0], kraus[0].conj())
+    for k in kraus[1:]:
         s = s + np.kron(k, k.conj())
     return s
 

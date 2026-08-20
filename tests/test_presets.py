@@ -92,10 +92,19 @@ def test_bundled_devices_load_and_are_physical() -> None:
     if not names:
         pytest.skip("no bundled device files yet")
     for name in names:
-        spec = presets.device(name)
+        spec = presets.device(name, allow_missing=True)
         nm = spec.noise_model()
         assert not nm.is_trivial(), name
         if spec.t1_us is not None and spec.t2_us is not None:
             assert spec.t2_us <= 2 * spec.t1_us + 1e-9, name
         assert 0 <= spec.gate_2q_error < 0.2, name
         assert spec.provenance, f"{name} has no provenance"
+
+
+def test_missing_errors_raise_unless_allowed(tmp_path: Path) -> None:
+    txt = FIXTURE.replace("gate_1q = {error_median = 0.001, duration_ns = 40.0}\n", "")
+    (tmp_path / "t.toml").write_text(txt)
+    with pytest.raises(ValueError, match="allow_missing"):
+        presets.load_device(tmp_path / "t.toml")
+    spec = presets.load_device(tmp_path / "t.toml", allow_missing=True)
+    assert spec.missing_fields == ("gate_1q",)

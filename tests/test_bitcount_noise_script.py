@@ -198,3 +198,37 @@ def test_compiled_2q_counts_parses_the_hardware_table(tmp_path: Path) -> None:
     assert bn.compiled_2q_counts(table, 2, 4) == {"linear": 120}
     assert bn.compiled_2q_counts(table, 9, 9) == {}
     assert bn.compiled_2q_counts(tmp_path / "absent.md", 5, 5) == {}
+
+
+# --- per-sweep callback shim --------------------------------------------------------------------
+
+
+def test_callback_helper_reproduces_train_superposition_exactly() -> None:
+    # The helper exists only to forward a callback that bitcount.train_superposition drops; it
+    # must otherwise be the same optimisation (same config override, same seeded start point).
+    from ptqnn.backends import reference as ref
+    from ptqnn.tasks import bitcount
+
+    net = bitcount.network(2, 1, "prototype")
+    seen: list[tuple[int, float]] = []
+    got = bn.train_superposition_with_callback(
+        net, 3, 2, ref.StatevectorBackend(), lambda n, _x, fx: seen.append((n, fx))
+    )
+    want = bitcount.train_superposition(net, seed=3, iterations=2)
+    np.testing.assert_allclose(got.params, want.params, atol=0, rtol=0)
+    assert got.loss == pytest.approx(want.loss, abs=0, rel=0)
+    assert got.history == want.history
+    assert [n for n, _ in seen] == [0, 1]  # one callback per sweep, schedule index from 0
+    assert [fx for _, fx in seen] == want.history[1:]
+
+
+def test_progress_line_columns_and_eta() -> None:
+    job = {"device": "ibm_fez", "hidden": "prototype", "iterations": 15}
+    row = bn._progress_line(job, 3, 1.25e-3, 60.0).split(",")
+    assert row[:3] == ["ibm_fez", "prototype", "3"]
+    assert float(row[3]) == pytest.approx(1.25e-3)
+    assert float(row[4]) == pytest.approx(60.0)
+    # 3 of 15 sweeps in 60 s → 20 s/sweep → 12 sweeps left → 240 s.
+    assert float(row[5]) == pytest.approx(240.0)
+    # Final sweep: nothing left to do.
+    assert float(bn._progress_line(job, 15, 1e-4, 300.0).split(",")[5]) == pytest.approx(0.0)

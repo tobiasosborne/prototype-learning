@@ -43,6 +43,7 @@ class DeviceSpec:
     readout_ns: float
     notes: str = ""
     provenance: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    missing_fields: tuple[str, ...] = ()
 
     def noise_model(self) -> NoiseModel:
         return NoiseModel(
@@ -66,7 +67,7 @@ def _median(section: dict[str, Any], key: str) -> float | None:
     return float(v)
 
 
-def parse_device(doc: dict[str, Any]) -> DeviceSpec:
+def parse_device(doc: dict[str, Any], allow_missing: bool = False) -> DeviceSpec:
     dev, noise = doc["device"], doc["noise"]
     g1, g2 = noise.get("gate_1q", {}), noise.get("gate_2q", {})
     ro = noise.get("readout", {})
@@ -75,6 +76,14 @@ def parse_device(doc: dict[str, Any]) -> DeviceSpec:
     if (t1 is None) != (t2 is None):
         # One of the two missing: drop relaxation entirely rather than guess.
         t1 = t2 = None
+    missing = [k for k, sec in (("gate_1q", g1), ("gate_2q", g2)) if "error_median" not in sec]
+    if "error_median" not in ro and "p01" not in ro:
+        missing.append("readout")
+    if missing and not allow_missing:
+        raise ValueError(
+            f"{dev['name']}: no published {missing}; pass allow_missing=True to model them as "
+            "error-free (reviews/002 #5) — the noise model will then be optimistic"
+        )
     return DeviceSpec(
         name=dev["name"],
         vendor=dev.get("vendor", ""),
@@ -94,12 +103,13 @@ def parse_device(doc: dict[str, Any]) -> DeviceSpec:
         readout_ns=float(ro.get("duration_ns", 0.0)),
         notes=str(noise.get("notes", "")),
         provenance=tuple(doc.get("provenance", ())),
+        missing_fields=tuple(missing),
     )
 
 
-def load_device(path: str | Path) -> DeviceSpec:
+def load_device(path: str | Path, allow_missing: bool = False) -> DeviceSpec:
     with open(path, "rb") as f:
-        return parse_device(tomllib.load(f))
+        return parse_device(tomllib.load(f), allow_missing)
 
 
 def _devices_dir() -> Path:
@@ -111,8 +121,10 @@ def available_devices() -> list[str]:
     return sorted(p.stem for p in d.glob("*.toml")) if d.is_dir() else []
 
 
-def device(name: str) -> DeviceSpec:
+def device(name: str, allow_missing: bool = False) -> DeviceSpec:
+    """Bundled preset by slug.  Devices with unpublished 1q/readout errors (Rigetti Ankaa-3)
+    raise unless ``allow_missing=True``, so an optimistic model is never built by accident."""
     p = _devices_dir() / f"{name}.toml"
     if not p.exists():
         raise KeyError(f"unknown device {name!r}; available: {available_devices()}")
-    return load_device(p)
+    return load_device(p, allow_missing)

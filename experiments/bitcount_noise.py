@@ -51,6 +51,7 @@ import json
 import multiprocessing as mp
 import subprocess
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -68,7 +69,7 @@ from ptqnn.circuits.neurons import HiddenKind, Network
 from ptqnn.noise import presets
 from ptqnn.noise.model import NoisyBackend
 from ptqnn.tasks import bitcount
-from ptqnn.train import distribution, losses
+from ptqnn.train import distribution, kwsa, losses
 
 Real = npt.NDArray[np.float64]
 
@@ -203,6 +204,54 @@ def train_clean(net: Network, seeds: list[int], iterations: int) -> dict[str, An
 # --- B. noise-aware training --------------------------------------------------------------------
 
 
+def train_superposition_with_callback(
+    net: Network,
+    seed: int,
+    iterations: int,
+    backend: Backend,
+    callback: Callable[[int, Real, float], None] | None = None,
+) -> kwsa.KWSAResult:
+    """``bitcount.train_superposition`` with a per-sweep callback.
+
+    ``bitcount.train_superposition`` builds the config and the seeded start point and then calls
+    ``kwsa.minimise`` *without* forwarding a callback, so a multi-hour noisy run cannot report
+    progress.  This mirrors it line for line — same ``SUPERPOSITION_CONFIG`` override, same
+    ``net.random_params(default_rng(seed))`` start point — and forwards ``callback``, which
+    ``kwsa.minimise`` invokes as ``(n, x, fx)`` after every sweep.
+    ``tests/test_bitcount_noise_script.py`` pins the equivalence; delete this helper if
+    ``train_superposition`` ever grows a ``callback`` argument.
+    """
+    cfg = kwsa.KWSAConfig(
+        **{**bitcount.SUPERPOSITION_CONFIG.__dict__, "iterations": iterations, "seed": seed}
+    )
+    x0 = net.random_params(np.random.default_rng(seed))
+    return kwsa.minimise(bitcount.kl_loss(net, backend), x0, cfg, callback=callback)
+
+
+def _progress_line(job: dict[str, Any], sweep: int, loss: float, elapsed: float) -> str:
+    """One ``progress.log`` row: ``device,model,sweep,loss,elapsed_s,eta_s``.
+
+    ETA extrapolates the sweeps done so far to the ones remaining — sweeps cost the same
+    ``3·n_params`` evaluations each, so the estimate is honest apart from machine contention."""
+    done = max(sweep, 1)
+    eta = elapsed / done * (job["iterations"] - done)
+    return f"{job['device']},{job['hidden']},{sweep},{loss:.6e},{elapsed:.1f},{eta:.1f}"
+
+
+def _dump_partial(path: Path, runs: list[dict[str, Any]], total: int) -> None:
+    """Rewrite ``partial_results.json`` after every finished cell, and echo the cell's summary."""
+    r = runs[-1]
+    print(
+        f"    [{len(runs)}/{total}] done {r['hidden']:9s} {r['device']:16s} "
+        f"seed {r['seed']} scale {r['scale']:g}: noisy KL {r['noisy_kl']:.3e}, clean-eval KL "
+        f"{r['clean_kl_of_noise_aware_params']:.3e}, {r['evaluations']} evals in "
+        f"{r['wall_s'] / 60:.1f} min ({r['seconds_per_evaluation']:.2f} s/eval)",
+        flush=True,
+    )
+    with path.open("w") as f:
+        json.dump({"completed": len(runs), "total": total, "runs": runs}, f, indent=1)
+
+
 def _train_noisy_job(job: dict[str, Any], backend: Backend | None = None) -> dict[str, Any]:
     """One noise-aware training run.
 
@@ -210,13 +259,27 @@ def _train_noisy_job(job: dict[str, Any], backend: Backend | None = None) -> dic
     ``spawn`` pool; it then builds its own numpy density-matrix backend.  The full-network path
     passes the parent's backend instead and calls this in-process, because one process owns the
     GPU."""
+    if backend is None:
+        # spawn children inherit OMP_NUM_THREADS=1 from the parent's import-time pin; orkan is an
+        # OpenMP C library and must be told its share of the machine *before* liborkan.so loads,
+        # which make_backend does lazily.
+        os.environ["OMP_NUM_THREADS"] = str(job.get("threads", 1))
+        backend = make_backend(job.get("backend", "numpy"))[0]
     net = bitcount.network(job["n_bits"], job["n_hidden"], job["hidden"])
     nm = presets.device(job["device"]).noise_model().scaled(job["scale"])
-    noisy = NoisyBackend(backend or ref.DensityMatrixBackend(), nm)
+    noisy = NoisyBackend(backend, nm)
+    progress_path = job.get("progress_path")
     t0 = time.perf_counter()
-    res = bitcount.train_superposition(
-        net, seed=job["seed"], iterations=job["iterations"], backend=noisy
-    )
+
+    def on_sweep(n: int, _x: Real, fx: float) -> None:
+        line = _progress_line(job, n + 1, fx, time.perf_counter() - t0)
+        print(f"    [progress] {line}", flush=True)
+        if progress_path:
+            # O_APPEND + one short write per sweep: safe to interleave across pool workers.
+            with open(progress_path, "a") as f:
+                f.write(line + "\n")
+
+    res = train_superposition_with_callback(net, job["seed"], job["iterations"], noisy, on_sweep)
     wall = time.perf_counter() - t0
     params = res.params
     target = bitcount.target_distribution(net.n_inputs)
@@ -231,6 +294,7 @@ def _train_noisy_job(job: dict[str, Any], backend: Backend | None = None) -> dic
         "history": [float(v) for v in res.history],
         "evaluations": int(res.evaluations),
         "wall_s": wall,
+        "seconds_per_evaluation": wall / max(int(res.evaluations), 1),
     }
 
 
@@ -562,6 +626,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--no-noise-aware", action="store_true", help="skip study B")
     p.add_argument("--retrain-scales", action="store_true", help="study C: retrain at each scale")
     p.add_argument("--jobs", type=int, default=8)
+    p.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="OpenMP threads per process for the orkan backend (numpy/BLAS stays pinned to 1); "
+        "orkan is memory-bound, so ~8 threads per worker beats one 64-thread worker",
+    )
     p.add_argument("--out", type=str, default=default_out)
     return p.parse_args(argv)
 
@@ -626,6 +697,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"unknown device(s) {unknown}; available {presets.available_devices()}")
     specs = {d: presets.device(d) for d in devices}
 
+    if args.threads > 1:
+        os.environ["OMP_NUM_THREADS"] = str(args.threads)
     backend, backend_kind = make_backend(args.backend)
     print(f"[backend] requested {args.backend!r}, using {backend_kind!r} ({backend.name})")
 
@@ -796,6 +869,13 @@ def main(argv: list[str] | None = None) -> None:
         n_bits_b, n_hidden_b = (
             (args.bits, args.hidden) if full_b else (args.train_bits, args.train_hidden)
         )
+        # One process owns the GPU, so a GPU run of the full network is sequential; orkan and
+        # numpy are ordinary CPU libraries and are mapped over a spawn pool.
+        sequential = full_b and backend_kind == "gpu"
+        job_backend = backend_kind if full_b else "numpy"
+        progress_path = out_dir / "progress.log"
+        progress_path.write_text("device,model,sweep,loss,elapsed_s,eta_s\n")
+        partial_path = out_dir / "partial_results.json"
         jobs = [
             {
                 "n_bits": n_bits_b,
@@ -805,6 +885,9 @@ def main(argv: list[str] | None = None) -> None:
                 "scale": 1.0,
                 "seed": seed,
                 "iterations": args.iterations,
+                "backend": job_backend,
+                "threads": args.threads,
+                "progress_path": str(progress_path),
             }
             for model in MODELS
             for d in devices
@@ -822,6 +905,9 @@ def main(argv: list[str] | None = None) -> None:
                     "scale": s,
                     "seed": args.seeds[0],
                     "iterations": args.iterations,
+                    "backend": "numpy",
+                    "threads": 1,
+                    "progress_path": str(progress_path),
                 }
                 for model in MODELS
                 for s in args.scales
@@ -834,7 +920,7 @@ def main(argv: list[str] | None = None) -> None:
             else []
         )
         t0 = time.perf_counter()
-        if full_b:
+        if sequential:
             print(
                 f"[B] noise-aware training on the FULL {n_bits_b}-bit/{n_hidden_b}-hidden network "
                 f"({b_nets['prototype'].n_qubits} qubits, {b_nets['prototype'].n_params} params), "
@@ -849,23 +935,26 @@ def main(argv: list[str] | None = None) -> None:
                     f"seed {job['seed']} ...",
                     flush=True,
                 )
-                r = _train_noisy_job(job, backend)
-                runs.append(r)
-                print(
-                    f"    [{i}/{len(jobs)}] done: noisy KL {r['noisy_kl']:.3e}, "
-                    f"clean-eval KL {r['clean_kl_of_noise_aware_params']:.3e}, "
-                    f"{r['evaluations']} evals in {r['wall_s'] / 60:.1f} min",
-                    flush=True,
-                )
+                runs.append(_train_noisy_job(job, backend))
+                _dump_partial(partial_path, runs, len(jobs))
         else:
             print(
-                f"[B] noise-aware training on the reduced {n_bits_b}-bit/{n_hidden_b}-hidden "
-                f"network ({b_nets['prototype'].n_qubits} qubits), "
-                f"{len(jobs) + len(scale_jobs)} runs, pool of {args.jobs}..."
+                f"[B] noise-aware training on the {b_nets['prototype'].n_qubits}-qubit "
+                f"{'FULL' if full_b else 'reduced'} {n_bits_b}-bit/{n_hidden_b}-hidden network, "
+                f"{len(jobs) + len(scale_jobs)} runs, pool of {args.jobs} × {args.threads} "
+                f"thread(s) on {job_backend} "
+                f"(~{probe_s * sweep_evals * args.iterations / 3600:.2f} h per run "
+                "at the probe's single-process speed)..."
             )
             ctx = mp.get_context("spawn")
+            all_jobs = jobs + scale_jobs
+            runs = []
             with ctx.Pool(processes=max(1, args.jobs)) as pool:
-                runs = pool.map(_train_noisy_job, jobs + scale_jobs)
+                # imap_unordered so a cell's result is on disk as soon as it finishes: an
+                # interrupted multi-hour run still leaves partial_results.json behind.
+                for r in pool.imap_unordered(_train_noisy_job, all_jobs):
+                    runs.append(r)
+                    _dump_partial(partial_path, runs, len(all_jobs))
         timings["B_s"] = time.perf_counter() - t0
 
         baseline: dict[str, Any] = {m: {} for m in MODELS}
@@ -976,6 +1065,7 @@ def main(argv: list[str] | None = None) -> None:
         "devices": devices,
         "n_qubits": results["n_qubits"],
         "n_params": results["n_params"],
+        "seconds_per_noisy_evaluation": probe_s,
         "wall_times_s": timings,
         "host_cpu_count": os.cpu_count(),
     }
@@ -1376,19 +1466,30 @@ def report(results: dict[str, Any], meta: dict[str, Any], args: argparse.Namespa
         "",
         "## Module notes",
         "",
-        "Two `src/` issues were found by this study and **fixed at HEAD** (commit `30564d9`); "
-        "they are recorded here because they set the shape of the experiment.",
+        "Three `src/` issues found by this study; the first two are **fixed at HEAD** (commit "
+        "`30564d9`), the third is **open**.  They are recorded because they set the shape of the "
+        "experiment.",
         "",
         "* `NoiseModel.scaled(0.0)` raised `ZeroDivisionError` (`t1_us / factor`).  The noiseless "
         "limit is a legitimate point of a noise sweep and now returns a trivial model, so study "
         "C's `s = 0` point needs no special case.",
-        f"* The density-matrix path applied every Kraus operator separately with "
-        f"`moveaxis`/`tensordot` on a {2 * nq}-axis tensor — ~80 ms per channel at {nq} qubits "
-        "against ~1 ms of memory traffic.  It now builds the block superoperator "
-        "`S = Σ_i K_i ⊗ K_i*` and applies it in one matmul: the noisy "
-        f"{nq}-qubit evaluation went 18 s → **{probe_s:.2f} s** on the GPU (numpy 148 s → 33 s), "
-        f"which is what makes noise-aware training on the {nq}-qubit network affordable at all "
-        f"({n_channels} channels are inserted per circuit).",
+        "* The density-matrix path applied every Kraus operator separately with "
+        "`moveaxis`/`tensordot` on a 2n-axis tensor — at 11 qubits ~80 ms per channel against "
+        "~1 ms of memory traffic.  It now builds the block superoperator `S = Σ_i K_i ⊗ K_i*` "
+        "and applies it in one matmul: the noisy 11-qubit evaluation went **18 s → 1.5 s** on "
+        "the GPU (numpy 148 s → 33 s).  That speedup is what makes noise-aware training on the "
+        f"full network affordable; this run measures {probe_s:.2f} s per noisy {nq}-qubit "
+        f"evaluation, with {n_channels} channels inserted per circuit.",
+        "* **Open:** the same commit broke `GpuDensityMatrixBackend`.  "
+        "`reference.superoperator` seeds its accumulator with `np.zeros((d², d²))` and then does "
+        "`s = s + np.kron(k, k.conj())`; under the GPU backend `k` is a CuPy array, `np.kron` "
+        "dispatches to CuPy, and the NumPy-plus-CuPy add raises "
+        "`TypeError: Unsupported type <class 'numpy.ndarray'>` "
+        "(`ptqnn/backends/reference.py`, in `superoperator`, reached from `apply_gate_dm`).  "
+        "Seeding the accumulator from the first Kraus term — or `np.zeros_like(np.kron(k0, k0))` "
+        "— keeps it array-library agnostic.  Repro: "
+        "`ref.superoperator([cupy.eye(2, dtype=cupy.complex128)])`.  Until it is fixed the exact "
+        "GPU path is unusable, and this study fell back to orkan.",
         "",
     ]
     return "\n".join(lines) + "\n"
