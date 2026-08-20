@@ -16,7 +16,7 @@ Updated: 2026-08-20 (session 1, in progress)
 | P7 ECG | in progress | agent running; encoding switched to 2·asin(√s) |
 | P8 noise library + vendor presets | done (review pending) | channels, NoiseModel (ASAP idle scheduling), Aer cross-check, 7 sourced device TOMLs |
 | P9 noisy experiments | not started | |
-| P10 hardware layer + plan | in progress | agent running |
+| P10 hardware layer + plan | layer done; plan report pending | gatesets, decompositions, routing, QASM3, executors; reports/hardware-compile-table.md |
 | P11 final report | not started | |
 
 ## Reproduction scoreboard (paper value → ours)
