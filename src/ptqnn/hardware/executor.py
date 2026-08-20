@@ -371,16 +371,19 @@ def cost_estimate(
     vendor = str(getattr(device, "vendor", "")).lower()
     name = str(getattr(device, "name", compiled.device_name)).lower()
 
-    slug_early = name.replace("-", "_")
-    if slug_early in _BRAKET_PER_SHOT and ("aws" in vendor or "braket" in vendor):
-        usd = _BRAKET_PER_TASK + _BRAKET_PER_SHOT[slug_early] * shots
+    # Finding 10: key the Braket table on the device slug alone.  No shipped device TOML has
+    # "aws" or "braket" in its ``vendor`` field (they say IonQ, IQM, Rigetti), so gating on the
+    # vendor string made every entry here unreachable.
+    slug = name.replace("-", "_")
+    if slug in _BRAKET_PER_SHOT:
+        usd = _BRAKET_PER_TASK + _BRAKET_PER_SHOT[slug] * shots
         return CostEstimate(
             model="aws_braket",
             unit="USD",
             value=usd,
             breakdown={
                 "per_task": _BRAKET_PER_TASK,
-                "per_shot": _BRAKET_PER_SHOT[slug_early],
+                "per_shot": _BRAKET_PER_SHOT[slug],
                 "shots": shots,
             },
             sources=(_SOURCES["braket"],),
@@ -423,18 +426,6 @@ def cost_estimate(
                 "we treat m as an additive minimum charge rather than a floor.",
                 "[ASSUMPTION] Azure's IonQ pricing is used as a proxy for IonQ direct/Braket.",
             ),
-        )
-
-    slug = name.replace("-", "_")
-    if slug in _BRAKET_PER_SHOT and ("aws" in vendor or "braket" in vendor):
-        per_shot = _BRAKET_PER_SHOT[slug]
-        usd = _BRAKET_PER_TASK + per_shot * shots
-        return CostEstimate(
-            model="aws_braket",
-            unit="USD",
-            value=usd,
-            breakdown={"per_task": _BRAKET_PER_TASK, "per_shot": per_shot, "shots": shots},
-            sources=(_SOURCES["braket"],),
         )
 
     if "ibm" in vendor or name.startswith("ibm"):

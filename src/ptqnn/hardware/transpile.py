@@ -52,6 +52,7 @@ than assuming all-to-all.  A real submission hands the circuit to the vendor's o
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -546,7 +547,22 @@ def route(
         raise ValueError("initial_layout must be injective")
 
     occupant = {p: q for q, p in pos.items()}
-    out = ir.Circuit(n_phys, initial_state=None)
+
+    # Finding 3: an Iris-style circuit carries its whole dataset superposition in
+    # ``initial_state`` [PTQNN §III.C].  The routed program runs on *physical* wires, so the
+    # state it starts from is the logical one relabelled by the **initial** layout (the final
+    # map is irrelevant here — the SWAPs that produce it have not happened yet).  Extra physical
+    # wires the coupling map has but the circuit does not are appended in |0⟩; because qubit 0
+    # is the most significant bit, that is a left shift of the basis index by the padding width.
+    state = circuit.initial_state
+    if state is not None:
+        pad = np.zeros(2**n_phys, dtype=np.complex128)
+        shift = n_phys - circuit.n_qubits
+        pad[np.arange(2**circuit.n_qubits) << shift] = state
+        free = [p for p in range(n_phys) if p not in occupant]
+        full = {**pos, **dict(zip(range(circuit.n_qubits, n_phys), free, strict=True))}
+        state = permutation_unitary(full, n_phys) @ pad
+    out = ir.Circuit(n_phys, initial_state=state)
 
     def do_swap(pa: int, pb: int) -> None:
         out.append(swap(pa, pb))
@@ -658,28 +674,73 @@ class CompiledCircuit:
     notes: tuple[str, ...] = field(default_factory=tuple)
 
 
-def gateset_for(native_2q: Sequence[str], native_1q: Sequence[str] = ()) -> GateSet:
+def gateset_for(
+    native_2q: Sequence[str],
+    native_1q: Sequence[str] = (),
+    *,
+    device_name: str = "",
+    strict: bool = False,
+) -> GateSet:
     """Pick a :class:`GateSet` from a device's advertised native gates.
 
     ``cz`` alone is ambiguous (IBM, IQM and Rigetti all use it), so the 1q set breaks the tie.
+    When no rule matches — Google's ``xy_microwave``/``virtual_z`` is the shipped example — we do
+    **not** quietly hand back IBM's ``{rz, sx, x}``: :func:`gateset_for` warns (or raises with
+    ``strict=True``) and returns :data:`~ptqnn.hardware.gatesets.GENERIC`, whose notes say it is
+    not a vendor basis.  Use :func:`gateset_note_for` to get the caveat as a string; that is what
+    :func:`compile_for` puts into ``CompiledCircuit.notes`` so a report cannot lose it.
     """
+    gset, note = gateset_note_for(native_2q, native_1q, device_name=device_name)
+    if note is not None:
+        if strict:
+            raise ValueError(note)
+        warnings.warn(note, RuntimeWarning, stacklevel=2)
+    return gset
+
+
+def gateset_note_for(
+    native_2q: Sequence[str],
+    native_1q: Sequence[str] = (),
+    *,
+    device_name: str = "",
+) -> tuple[GateSet, str | None]:
+    """``(gate set, caveat or None)``.  The caveat is an ``[ASSUMPTION]`` line, ready to log."""
     two = {g.lower() for g in native_2q}
     one = {g.lower() for g in native_1q}
+    who = device_name or f"native_1q={sorted(one)}, native_2q={sorted(two)}"
+
     if two & {"ms", "xx"}:
-        return GATESETS["ionq"]
+        return GATESETS["ionq"], None
     if two & {"zz", "rzz", "zzphase", "zzmax"}:
-        return GATESETS["ionq"] if one & {"gpi", "gpi2"} else GATESETS["quantinuum_h"]
+        if one & {"gpi", "gpi2"}:
+            return GATESETS["ionq"], None
+        return GATESETS["quantinuum_h"], None
     if "cz" in two or "iswap" in two:
         if one & {"prx"}:
-            return GATESETS["iqm"]
+            return GATESETS["iqm"], None
         if one & {"sx"}:
-            return GATESETS["ibm_heron"]
-        if "iswap" in two or one == {"rx", "rz"}:
-            return GATESETS["rigetti_ankaa"]
-        return GATESETS["ibm_heron"]
+            return GATESETS["ibm_heron"], None
+        if one <= {"rx", "rz"} and one:
+            note = None
+            if "cz" not in two:
+                # Ankaa-3's verbatim set is {rx, rz, iswap}; we synthesise CZ, not iSWAP.
+                note = (
+                    f"[ASSUMPTION] {who} advertises no CZ: transpiled to CZ anyway because "
+                    "ptqnn.hardware.transpile has no iSWAP synthesis.  A verbatim submission "
+                    "must be rebased by the vendor compiler (see gatesets.RIGETTI_ANKAA.notes)."
+                )
+            return GATESETS["rigetti_ankaa"], note
+        return GENERIC, (
+            f"[ASSUMPTION] {who} names a CZ/iSWAP entangler but a 1q basis we have no Euler "
+            "word for; compiled into the GENERIC {rz, ry, rx; cx} basis, which is NOT this "
+            "device's native set — gate counts are indicative only."
+        )
     if two & {"cx", "cnot", "ecr"}:
-        return GENERIC
-    return GENERIC
+        return GENERIC, None
+    return GENERIC, (
+        f"[ASSUMPTION] {who} names no recognised entangler; compiled into the GENERIC "
+        "{rz, ry, rx; cx} basis, which is NOT this device's native set."
+    )
 
 
 def coupling_for(topology: str, n: int) -> tuple[Coupling, str]:
@@ -725,7 +786,11 @@ def compile_for(
             f"circuit needs {n} qubits, device {getattr(device, 'name', '?')} has {dev_n}"
         )
 
-    gs = gateset_for(getattr(device, "native_2q", ()), getattr(device, "native_1q", ()))
+    gs, gs_note = gateset_note_for(
+        getattr(device, "native_2q", ()),
+        getattr(device, "native_1q", ()),
+        device_name=str(getattr(device, "name", "")),
+    )
     coupling, note = coupling_for(str(getattr(device, "topology", "")), n)
 
     # Route the logical circuit first (a CRX and its two CXs have the same adjacency demand),
@@ -737,8 +802,15 @@ def compile_for(
     d2 = float(getattr(device, "gate_2q_ns", 0.0) or 0.0)
     durations = {"1q": d1, "2q": d2} if (d1 or d2) else None
     notes = [note]
+    if gs_note is not None:
+        notes.append(gs_note)
     if durations is None:
         notes.append("[ASSUMPTION] no published gate durations: critical_path_ns is undefined")
+    if not float(getattr(device, "readout_ns", 0.0) or 0.0):
+        notes.append(
+            "[ASSUMPTION] no published readout duration: critical_path_ns omits measurement, "
+            "which on a superconducting QPU is the longest single operation in the program"
+        )
 
     # After the rebase every SWAP has become three native entanglers, so ``metrics(final)`` can
     # no longer see them; carry the router's own count across and record what it cost.
@@ -746,6 +818,18 @@ def compile_for(
     n_swap = routed.count("swap")
     m["n_swap"] = n_swap
     m["n_2q_from_swap"] = 3 * n_swap
+
+    # Finding 4: every shot ends in a measurement, and on a superconducting QPU that readout is
+    # the longest single operation in the program (IBM Fez: 1560 ns readout vs ~1056 ns of
+    # gates).  ``metrics`` only walks ``circuit.ops``, so add it here and report it separately.
+    # It stays out of the *noise* model on purpose: the vendor's asymmetric p10 already IS the
+    # T1 decay during readout (1 - exp(-1560 ns / 144.855 µs) = 0.0107 vs p10 = 0.0115), so an
+    # extra relaxation channel before the confusion map would double count it.
+    ro = float(getattr(device, "readout_ns", 0.0) or 0.0)
+    m["gate_time_ns"] = m["critical_path_ns"]
+    m["readout_ns"] = ro or None
+    if m["critical_path_ns"] is not None:
+        m["critical_path_ns"] = float(m["critical_path_ns"]) + ro
 
     return CompiledCircuit(
         circuit=final,

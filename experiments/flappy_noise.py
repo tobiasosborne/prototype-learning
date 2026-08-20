@@ -720,7 +720,7 @@ def plot_margins(results: dict[str, Any], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(11, 5.5))
     ax.stairs(counts / counts.sum(), edges, fill=True, color=COLOUR_CLEAN, alpha=0.75)
     ax.set_xscale("log")
-    ax.set_xlim(edges[counts > 0][0] / 3, 1.0)
+    ax.set_xlim(edges[:-1][counts > 0][0] / 3, 1.0)
     top = float((counts / counts.sum()).max()) * 1.35
     ax.set_ylim(0, top)
     ax.set_xlabel("decision margin δ = |P(out=1) − ½|")
