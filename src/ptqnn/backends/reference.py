@@ -14,6 +14,7 @@ ones belong to the orkan or trajectory backends.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -57,9 +58,10 @@ def apply_gate_sv(psi: Complex, gate: Gate, n: int) -> Complex:
 def superoperator(kraus: Sequence[Complex]) -> Complex:
     """``S = Σ_i K_i ⊗ K_i*`` acting on the row-major vectorisation ``vec(X)[a·d + b] = X[a, b]``
     of the channel's own ``d × d`` block, since ``vec(A X B) = (A ⊗ Bᵀ) vec(X)``."""
-    # Accumulate in the array module of the inputs (NumPy or CuPy); a NumPy zeros seed would
-    # break GPU dispatch (reviews/002 blocker 2).
-    s: Complex = np.asarray(np.kron(kraus[0], kraus[0].conj()))
+    # Accumulate in the array module of the inputs (NumPy or CuPy) via ``__array_function__``
+    # dispatch of ``np.kron``; a NumPy zeros seed or an ``np.asarray`` wrapper would break GPU
+    # dispatch (reviews/002 blocker 2; CuPy ≥ 13 raises on implicit host conversion).
+    s: Complex = cast(Complex, np.kron(kraus[0], kraus[0].conj()))
     for k in kraus[1:]:
         s = s + np.kron(k, k.conj())
     return s
