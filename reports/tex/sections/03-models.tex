@@ -6,21 +6,21 @@
 
 \begin{figure}[t]
 \centering
-\begin{subfigure}[b]{0.42\textwidth}\centering
-\begin{quantikz}[row sep=0.35cm, column sep=0.45cm]
+\begin{subfigure}[b]{0.36\textwidth}\centering
+\resizebox{\linewidth}{!}{\begin{quantikz}[row sep=0.35cm, column sep=0.45cm]
 \lstick{$q_1$ (input)} & \ctrl{2} & \qw & \qw \\
 \lstick{$q_2$ (input)} & \qw & \ctrl{1} & \qw \\
 \lstick{$q_3$ (neuron)} & \gate{\RX(w_1)} & \gate{\RX(w_2)} & \gate{\RX(b)} \qw
-\end{quantikz}
+\end{quantikz}}
 \caption{Classic neuron (paper, Fig.~1): one controlled rotation per input and a bias
 rotation on the neuron's qubit.  The inputs are untouched.}
 \end{subfigure}\hfill
-\begin{subfigure}[b]{0.54\textwidth}\centering
-\begin{quantikz}[row sep=0.35cm, column sep=0.4cm]
+\begin{subfigure}[b]{0.6\textwidth}\centering
+\resizebox{\linewidth}{!}{\begin{quantikz}[row sep=0.35cm, column sep=0.4cm]
 \lstick{$q_1$} & \gate{\RX(\varphi_1)} & \ctrl{2} & \gate{\RX(-\varphi_1)} & \qw & \qw & \qw \\
 \lstick{$q_2$} & \qw & \qw & \qw & \gate{\RX(\varphi_2)} & \ctrl{1} & \gate{\RX(-\varphi_2)} \\
 \lstick{$q_3$} & \qw & \gate{\RX(\theta)} & \qw & \qw & \gate{\RX(\theta)} & \qw
-\end{quantikz}
+\end{quantikz}}
 \caption{Prototype neuron (paper, Fig.~2): each input is rotated by a learned $\varphi_i$,
 controls a rotation by the \emph{same} $\theta$ of the neuron's qubit, and is rotated back.}
 \end{subfigure}

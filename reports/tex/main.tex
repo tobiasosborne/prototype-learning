@@ -31,7 +31,7 @@
 \usepackage[capitalise,nameinlink]{cleveref}
 
 \hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
-\captionsetup{font=small,labelfont=bf,width=0.95\textwidth}
+\captionsetup{font=small,labelfont=bf}
 \sisetup{detect-all,range-phrase=--,range-units=single}
 \graphicspath{{figures/}}
 \setlength{\parskip}{0.35em}
@@ -45,6 +45,7 @@
 \newcommand{\TV}{\mathrm{TV}}
 \newcommand{\code}[1]{\texttt{\small #1}}
 \newcommand{\run}[1]{\texttt{\footnotesize #1}}
+\DeclareUrlCommand\runpath{\urlstyle{tt}}
 \newtheorem{definition}{Definition}
 
 \title{Prototype quantum neural networks under realistic noise:\\
