@@ -116,6 +116,7 @@ def make_policy(
     backend: Backend | None = None,
     shots: int = 0,
     shot_seed: int = 0,
+    decision: ag.SPRTDecision | None = None,
 ) -> ag.QuantumFlappyPolicy:
     return ag.QuantumFlappyPolicy(
         net=net,
@@ -127,6 +128,7 @@ def make_policy(
         cache_levels=cfg.cache_levels,
         shots=shots,
         shot_seed=shot_seed,
+        decision=decision,
     )
 
 

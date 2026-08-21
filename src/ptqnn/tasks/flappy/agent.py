@@ -82,6 +82,51 @@ def flip_probability(margin: float, shots: int) -> float:
     return float(0.5 * math.erfc(margin * math.sqrt(2.0 * shots)))
 
 
+@dataclass(frozen=True)
+class SPRTDecision:
+    """Sequential probability ratio test on the sign of ``P(out = 1) − ½`` (shot-noise
+    programme, item 3).
+
+    Wald's test between ``H+: p = ½ + δ0`` and ``H−: p = ½ − δ0``: after ``n`` shots with ``k``
+    ones the log-likelihood ratio is ``Λ = (2k − n)·log((1 + 2δ0)/(1 − 2δ0))``; stop and decide
+    ``H+`` when ``Λ ≥ log((1 − β)/α)``, ``H−`` when ``Λ ≤ log(β/(1 − α))``, else draw another
+    ``block`` shots, up to ``max_shots`` (then decide on the sign of ``k − n/2``).  Far from the
+    boundary the test resolves in tens of shots; only frames within ~δ0 of it pay the cap.
+    Error rates at ``|p − ½| ≥ δ0`` are bounded by ``α, β`` (Wald 1945, *Ann. Math. Stat.* 16,
+    117 — standard result; the bound is approximate because of the discrete overshoot).
+    """
+
+    delta0: float = 0.02
+    alpha: float = 0.05
+    beta: float = 0.05
+    max_shots: int = 10_000
+    block: int = 20
+
+    def __post_init__(self) -> None:
+        if not 0 < self.delta0 < 0.5:
+            raise ValueError("delta0 must lie in (0, ½)")
+        if self.max_shots <= 0 or self.block <= 0:
+            raise ValueError("max_shots and block must be positive")
+
+    def decide(self, p: float, rng: np.random.Generator) -> tuple[bool, int]:
+        """Sample ``Bernoulli(p)`` in blocks until the test stops; returns ``(flap, shots)``."""
+        step = math.log((1 + 2 * self.delta0) / (1 - 2 * self.delta0))
+        upper = math.log((1 - self.beta) / self.alpha)
+        lower = math.log(self.beta / (1 - self.alpha))
+        pc = min(max(p, 0.0), 1.0)
+        n = k = 0
+        while n < self.max_shots:
+            b = min(self.block, self.max_shots - n)
+            k += int(rng.binomial(b, pc))
+            n += b
+            lam = (2 * k - n) * step
+            if lam >= upper:
+                return True, n
+            if lam <= lower:
+                return False, n
+        return bool(2 * k > n), n
+
+
 class Policy(Protocol):
     """Anything that turns an observation into a flap decision."""
 
@@ -129,6 +174,9 @@ class QuantumFlappyPolicy:
     drawn afresh every frame — the hardware situation, where ``P(out = 1)`` is only ever a
     finite-shot estimate.  Not cached (every frame is a new draw)."""
     shot_seed: int = 0
+    decision: SPRTDecision | None = None
+    """``None``: fixed ``shots`` per frame.  A :class:`SPRTDecision`: sequential test, with
+    ``shots`` ignored in favour of ``decision.max_shots``."""
     activation_cache: dict[tuple[float, ...], float] = field(default_factory=dict, repr=False)
     frame_margins: list[float] = field(default_factory=list, repr=False)
     """``|P(out = 1) − threshold|`` of every frame played, in order — the decision margin that
@@ -190,6 +238,12 @@ class QuantumFlappyPolicy:
         fresh ``shots``-sample estimate of it."""
         p = self._cached_activation(obs)
         self.frame_margins.append(abs(p - self.threshold))
+        if self.decision is not None:
+            if self.threshold != 0.5:
+                raise ValueError("SPRTDecision tests the sign of p − ½; threshold must be 0.5")
+            flap, used = self.decision.decide(p, self._rng)
+            self.shots_used += used
+            return flap
         if self.shots > 0:
             self.shots_used += self.shots
             k = int(self._rng.binomial(self.shots, min(max(p, 0.0), 1.0)))

@@ -32,6 +32,7 @@ With ``t0 = 0`` and ``jitter = 0`` this is plain KW descent with greedy acceptan
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -112,9 +113,18 @@ def minimise(
     callback: Callable[[int, Params, float], None] | None = None,
     start_iteration: int = 0,
     map_fn: MapFn = _serial_map,
+    probe_context: Callable[[], AbstractContextManager[object]] | None = None,
 ) -> KWSAResult:
     """Run ``cfg.iterations`` KW–SA steps from ``x0``; the schedule index starts at
-    ``start_iteration`` so callers can resume or interleave runs.  Returns the best point seen."""
+    ``start_iteration`` so callers can resume or interleave runs.  Returns the best point seen.
+
+    ``probe_context`` (shot-noise programme, item 2): a context-manager factory entered once per
+    coordinate, around the ``±c`` probes and the KW step that compares them — e.g.
+    :meth:`ptqnn.backends.shots.ShotBackend.common_random_numbers`, so the three evaluations
+    share one draw of shot noise and the central difference sees ``O(c²/N)`` variance instead of
+    ``O(1/N)``.  In ``mode="full"`` it wraps the whole gradient.
+    """
+    ctx = probe_context if probe_context is not None else nullcontext
     rng = np.random.default_rng(cfg.seed)
     x = np.asarray(x0, dtype=np.float64).copy()
     fx = f(x)
@@ -133,10 +143,11 @@ def minimise(
             for i in rng.permutation(x.size):
                 e = np.zeros_like(x)
                 e[i] = c_n
-                fp, fm = map_fn(f, [x + e, x - e])
-                step = np.zeros_like(x)
-                step[i] = -a_n * (fp - fm) / (2 * c_n)
-                fs = f(x + step)
+                with ctx():
+                    fp, fm = map_fn(f, [x + e, x - e])
+                    step = np.zeros_like(x)
+                    step[i] = -a_n * (fp - fm) / (2 * c_n)
+                    fs = f(x + step)
                 res.evaluations += 3
                 fc, cand = min((fp, x + e), (fm, x - e), (fs, x + step), key=lambda t: t[0])
                 if accept(fc - fx, temperature, cfg.k, rng):
@@ -145,7 +156,8 @@ def minimise(
                     if fx < best_f:
                         best_x, best_f = x.copy(), fx
         else:
-            g, ev = kw_gradient(f, x, c_n, map_fn)
+            with ctx():
+                g, ev = kw_gradient(f, x, c_n, map_fn)
             res.evaluations += ev
             cand = x - a_n * g
             if cfg.jitter > 0:
