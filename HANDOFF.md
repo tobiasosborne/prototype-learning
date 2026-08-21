@@ -1,14 +1,12 @@
 # HANDOFF
 
-End of session 2 (2026-08-21). Read STATE.md first. The deliverable is `reports/tex/main.pdf`
+End of session 3 (2026-08-21, docs round; no code changed). Read STATE.md first, then `docs/README.md` for the layer docs. The deliverable is `reports/tex/main.pdf`
 (build: `cd reports/tex && latexmk -pdf main.tex`; figures: `experiments/report_figures.py`).
 
 ## Work queue, in order
 
-1. **Review round 3.** `reviews/003-session2.md` holds the Codex (gpt-5.6-sol, xhigh) adversarial
-   review of the session-2 diff (`git diff 7271620..HEAD`). Apply or explicitly decline each
-   finding in a "Resolution" table at the bottom, re-run `sh scripts/check-all.sh`, and update
-   the tex report if a number changes (the report quotes run dirs only — regenerate, do not edit).
+1. (done in session 2) Review round 3 closed — all nine findings applied, resolution table in
+   `reviews/003-session2.md`.
 2. **Shot-noise programme item 4** (the one that now limits sampled training): a loss that uses
    all shots — train on the joint P(x, out) with target (popcount+1)/112 · P(out=1), or one
    amplitude-amplification step on the `out=1` branch. Where: `train/distribution.py`
@@ -34,4 +32,6 @@ End of session 2 (2026-08-21). Read STATE.md first. The deliverable is `reports/
 * Every hardware number goes through `experiments/hardware_plan.py`; never hand-edit the report.
 
 Gates: `LD_LIBRARY_PATH=/usr/lib/wsl/lib sh scripts/check-all.sh` (green at session close).
-Subagents: Codex only this session (`docs/codex.md`); no Claude subagents were used.
+Subagents: none in session 3. Keep the docs honest: a doc that names a function, flag or number
+is verified against the code when touched; `docs/*.md` describe layers, READMEs describe folders,
+`STATE.md` alone holds numbers that move.

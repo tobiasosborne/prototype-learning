@@ -1,3 +1,42 @@
+# Session 3 — 2026-08-21 — documentation round
+
+## HANDOFF — state at session close
+No code or report numbers changed. The repo now has layer docs (`docs/`) and a README in every
+folder; `CLAUDE.md`/`AGENTS.md` point at `docs/README.md`. Work queue unchanged: shot-noise
+programme items 4–6 (HANDOFF.md).
+
+## What was done
+- `README.md` (was empty; `pyproject` readme target): install, a runnable 30-second tour
+  (checked: clean KL 5.5e-4, ibm_fez 3.6e-3), layout, reproduction commands, conventions.
+- `docs/README.md` index; `docs/architecture.md` (package map, three invariants, network
+  parameter layout, data flow, fast paths, where assumptions live); `docs/backends.md` (backend
+  matrix with caps and what each is pinned to; orkan 2q-channel routes; CRN); `docs/noise.md`
+  (channel algebra, NoiseModel placement/ASAP semantics, `scaled`, preset mapping, the seven
+  devices and their gaps, provenance rules); `docs/training.md` (KW–SA config table, per-task
+  schedules, the superposition observable, finite-shot training: variance/bias/decision noise);
+  `docs/tasks.md` (per task: paper fixes vs our assumptions, module map, results, scripts);
+  `docs/hardware.md` (three transpile passes, routing caveat, QASM bit order, executors, cost
+  model, `hardware_plan.py` sections); `docs/testing.md` (rules, per-file map, how to add).
+- Folder READMEs: `experiments/` (script table with costs, pinned run-dir table with commits,
+  rules), `reports/` (what each report is, how to build the PDF, latexmk gotchas), `reviews/`
+  (round table with headline findings and status, how to write a brief), `notes/`, `tests/`,
+  `data/` (MIT-BIH 100 provenance/licence), `literature/` (what is gitignored and why).
+- `CLAUDE.md` = `AGENTS.md`: one line pointing at the docs (74 lines).
+
+## Verification
+- `LD_LIBRARY_PATH=/usr/lib/wsl/lib sh scripts/check-all.sh`: green — 441 passed, 6 deselected
+  (34.8 s). README snippet executed end to end.
+- Every function/flag/number named in the new docs was read from the source or `STATE.md`
+  during writing; run-dir commits from the `meta.json` files.
+
+## Gotchas for future agents
+- `docs/*.md` describe layers and deliberately repeat no moving numbers beyond what `STATE.md`
+  holds; when a number changes, change `STATE.md` and the report, and grep `docs/` for it.
+- `tests/oracle/indep_sim.py` must stay free of `ptqnn` imports (blind-oracle property; stated
+  in `tests/README.md`).
+
+# (earlier: session 2)
+
 # Session 2 — 2026-08-21 — review-002 queue, shot-noise programme, provenanced hardware plan, LaTeX report
 
 ## HANDOFF — state at session close

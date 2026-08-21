@@ -1,6 +1,6 @@
 # STATE — single source of truth
 
-Updated: 2026-08-21 (end of session 2)
+Updated: 2026-08-21 (end of session 3)
 
 ## Phase status (see PLAN.md §3)
 
@@ -19,7 +19,8 @@ Updated: 2026-08-21 (end of session 2)
 | P10 hardware layer + plan | done; review-002 blocker 1 closed | `experiments/hardware_plan.py` → run dir + provenance; reports/hardware-plan.md v2 |
 | P11 final report | **done** | `reports/tex/main.pdf` (28 pp, 23 figures from `experiments/report_figures.py`); reproduction.md, noise.md, hardware-plan.md |
 | Shot-noise programme | items 1–3 done (1 negative, 2 partial, 3 positive); 4–6 not started | `backends/shots.py`, `kwsa.probe_context`, `flappy.agent.SPRTDecision`, margin objective |
-| Review round 3 | Codex (gpt-5.6-sol) review launched 2026-08-21; findings → reviews/003-session2.md | see worklog session 2 for resolution status |
+| Review round 3 | closed: all 9 findings applied (reviews/003-session2.md resolution table) | |
+| Docs round (session 3) | **done** | `README.md`, `docs/{architecture,backends,noise,training,tasks,hardware,testing}.md`, READMEs in `experiments/`, `reports/`, `reviews/`, `notes/`, `tests/`, `data/`, `literature/`; no code changed |
 
 ## Reproduction scoreboard (paper value → ours)
 

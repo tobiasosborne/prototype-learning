@@ -4,7 +4,7 @@ Reproduce Rosenhahn & Hirche, *Prototype Learning for Quantum Neural Networks* (
 Iris, Flappy Bird, ECG), then harden it: a CP-map noise layer fed by vendor calibration data,
 noisy training runs, and a path to real hardware. Principal: Tobias Osborne (expert; write at
 expert level, no fluff). Plan: `PLAN.md`. Where things stand: `STATE.md`, then `HANDOFF.md`.
-This file is mirrored as `AGENTS.md`.
+This file is mirrored as `AGENTS.md`. Layer-by-layer docs: `docs/README.md`; every folder has a README.
 
 ## Build & test
 
