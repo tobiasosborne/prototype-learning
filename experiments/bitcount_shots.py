@@ -4,8 +4,9 @@ do common random numbers buy?  (Shot-noise programme, item 2.)
 Everything the paper trains is trained on exact probabilities.  On hardware the loss is computed
 from ``counts/N``, so the central differences of ``[PTQNN §II.C]`` see shot noise of variance
 ``O(1/N)`` on *each* probe and ``O(1/(c²N))`` on the derivative.  This script trains the Fig-5
-network (``Network(5, 5)``, 11 qubits, 36 parameters) with the paper's own KW–SA schedule
-(``bitcount.SUPERPOSITION_CONFIG``) on ``ShotBackend`` at ``N`` shots per evaluation, with and
+network (``Network(5, 5)``, 11 qubits, 36 parameters) with our reproduction's KW–SA schedule
+(``bitcount.SUPERPOSITION_CONFIG`` — the paper publishes no schedule; ours is ``[ASSUMPTION]``)
+on ``ShotBackend`` at ``N`` shots per evaluation, with and
 without common random numbers (``kwsa.minimise(probe_context=backend.common_random_numbers)``),
 and records the *exact* KL of the iterate after every sweep (monitored on a statevector, never
 used for optimisation).
@@ -52,10 +53,15 @@ def log(msg: str) -> None:
 
 
 def git_hash() -> str:
+    """HEAD, with a ``-dirty`` suffix when the tree has uncommitted changes (review 003 #3)."""
     try:
-        return subprocess.run(
+        head = subprocess.run(
             ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True, cwd=ROOT
         ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT
+        ).stdout.strip()
+        return f"{head}-dirty" if dirty else head
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
@@ -191,8 +197,8 @@ def render(rows: list[dict[str, Any]], shots_list: list[int], meta: dict[str, An
         "# Bit-count trained on sampled probabilities — common random numbers for KW–SA\n",
         f"Run `{meta['run_dir']}` — git `{meta['git_hash'][:12]}` — "
         f"wall {meta['wall_seconds']:.0f} s — "
-        f"`Network({meta['n_bits']}, {meta['n_hidden']})`, {meta['sweeps']} sweeps of the "
-        "paper schedule "
+        f"`Network({meta['n_bits']}, {meta['n_hidden']})`, {meta['sweeps']} sweeps of our "
+        "reproduction schedule "
         "(`bitcount.SUPERPOSITION_CONFIG`), 3 optimiser seeds; the loss is the plug-in KL of "
         "`counts/N`; the column values are the **exact** KL of the final iterate.\n",
         "| N | CRN | exact KL final (median, min–max) | best iterate (median) | shots per run |",

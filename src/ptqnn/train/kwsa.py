@@ -121,8 +121,8 @@ def minimise(
     ``probe_context`` (shot-noise programme, item 2): a context-manager factory entered once per
     coordinate, around the ``±c`` probes and the KW step that compares them — e.g.
     :meth:`ptqnn.backends.shots.ShotBackend.common_random_numbers`, so the three evaluations
-    share one draw of shot noise and the central difference sees ``O(c²/N)`` variance instead of
-    ``O(1/N)``.  In ``mode="full"`` it wraps the whole gradient.
+    share one draw of shot noise and the slope estimate has variance ``O(1/(cN))`` instead of
+    ``O(1/(c²N))``.  In ``mode="full"`` it wraps the whole gradient.
     """
     ctx = probe_context if probe_context is not None else nullcontext
     rng = np.random.default_rng(cfg.seed)

@@ -376,16 +376,19 @@ def test_margin_hinge_penalises_small_margins_only() -> None:
     assert tr.margin_hinge([], margin=0.1) == 0.0
 
 
-def test_objective_with_margin_weight_adds_the_hinge() -> None:
+def test_objective_with_margin_weight_adds_a_per_frame_penalty() -> None:
     net = _net()
     params = net.random_params(np.random.default_rng(0))
     plain = tr.ObjectiveConfig(max_steps=150)
-    hinged = tr.ObjectiveConfig(max_steps=150, margin=0.1, margin_weight=2.0)
+    hinged = tr.ObjectiveConfig(max_steps=150, margin=0.1, margin_weight=0.5)
     base = tr.objective(net, seeds=(0, 1), cfg=plain)(params)
     policy = tr.make_policy(net, params, plain)
     tr.evaluate(policy, (0, 1), 150)
-    hinge = tr.margin_hinge(policy.frame_margins, 0.1)
-    assert tr.objective(net, seeds=(0, 1), cfg=hinged)(params) == pytest.approx(base + 2.0 * hinge)
+    m = policy.frame_margins
+    want = base + 0.5 * 0.01 * tr.margin_hinge(m, 0.1) * len(m) / 2
+    assert tr.objective(net, seeds=(0, 1), cfg=hinged)(params) == pytest.approx(want)
+    # a frame survived with zero margin still nets +0.01·(1 − weight) > 0: dying is never rewarded
+    assert tr.margin_penalty([0.0], 0.1, 0.5, 1) < 0.01
 
 
 def test_sampled_decisions_flip_at_the_binomial_rate() -> None:

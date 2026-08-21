@@ -31,10 +31,9 @@ def test_idle_fidelity_limits() -> None:
 
 
 def test_stateprep_dense_count_is_shende_bullock_markov() -> None:
-    s = hp.section_stateprep(n=12, k_train=120)
-    assert s["dense_cnots_sbm"] == 2**13 - 24 - 2 == 8166  # not 4070 = 2^n − 2n − 2
-    assert s["sparse_cnots_leading_term"] == 1440
-    assert 0 < s["h2_1_fidelity_dense_sbm"] < s["h2_1_fidelity_sparse"] < 1
+    s = hp.section_stateprep(n=12)
+    assert s["dense_cnots_sbm"] == 2**13 - 24 == 8168  # 2^(n+1) − 2n; not 4070 = 2^n − 2n − 2
+    assert 0 < s["h2_1_fidelity_dense_sbm"] < min(s["h2_1_fidelity_sparse_leading_term_per_run"])
 
 
 def test_fidelity_budget_factors_multiply_and_flag_missing_fields() -> None:
@@ -73,3 +72,59 @@ def test_every_calibration_number_used_has_a_provenance_entry() -> None:
     # and a sourced field really points at a URL with a quote
     fez = pv["ibm_fez"]["fields"]["gate_2q_error"]["sources"][0]
     assert fez["url"].startswith("http") and fez["quote"]
+
+
+def test_provenance_validator_compares_values_and_rejects_wildcards() -> None:
+    """Review 003 #2: a changed calibration value, or an entry that only names a different field,
+    must leave the field UNSOURCED.  The validator is exercised on a mutated IBM preset."""
+    import dataclasses
+
+    fez = presets.device("ibm_fez")
+    # 1. the shipped preset is fully sourced
+    assert hp.section_provenance({"ibm_fez": fez})["ibm_fez"]["unsourced"] == []
+    # 2. mutate a value: the entry's value no longer matches → unsourced (the validator reads the
+    #    raw preset for values, so we mutate the provenance instead: drop every entry that names
+    #    gate_2q.error_median and keep the rest, including the 'snapshot epoch' wildcard)
+    keep = tuple(e for e in fez.provenance if "gate_2q.error_median" not in str(e.get("field", "")))
+    mutated = dataclasses.replace(fez, provenance=keep)
+    import unittest.mock as um
+
+    with um.patch.object(hp.presets, "device", return_value=mutated):
+        pv = hp.section_provenance({"ibm_fez": mutated})["ibm_fez"]
+    assert "gate_2q_error" in pv["unsourced"]
+    # 3. an entry with the right id but a different value does not vouch
+    wrong = tuple(
+        {**e, "value": 0.123}
+        if str(e.get("field", "")).startswith("noise.gate_1q.error_median (")
+        else e
+        for e in keep
+    )
+    wrong = tuple(
+        e
+        for e in wrong
+        if str(e.get("field", "")) != "noise.gate_1q.error_median, noise.gate_1q.duration_ns"
+    )
+    with um.patch.object(
+        hp.presets, "device", return_value=dataclasses.replace(fez, provenance=wrong)
+    ):
+        pv = hp.section_provenance({"ibm_fez": fez})["ibm_fez"]
+    assert "gate_1q_error" in pv["unsourced"]
+
+
+def test_entry_values_parses_combined_fields() -> None:
+    e = {"field": "noise.readout.error_median, p01, p10, duration_ns", "value": [1, 2, 3, 4]}
+    v = hp._entry_values(e)
+    assert v["noise.readout.p01"] == 2 and v["noise.readout.duration_ns"] == 4
+    e = {"field": "noise.t1_us.median (derived: median of 156 values)", "value": 144.855}
+    assert hp._entry_values(e) == {"noise.t1_us.median": 144.855}
+    e = {"field": "device.native_1q, device.native_2q", "value": ["cz", "rz", "sx", "x"]}
+    assert hp._entry_values(e)["device.native_1q"] == ["cz", "rz", "sx", "x"]
+    assert hp._entry_values({"field": "snapshot epoch", "value": "2025"}) == {}
+
+
+def test_stateprep_uses_distinct_training_codes() -> None:
+    s = hp.section_stateprep(n=12)
+    assert s["k_distinct_train_codes_per_run"] == [14, 12, 14]
+    assert s["dense_cnots_sbm"] == 2**13 - 24 == 8168
+    assert s["sparse_cnots_leading_term_per_run"] == [168, 144, 168]
+    assert all(0.8 < f < 0.9 for f in s["h2_1_fidelity_sparse_leading_term_per_run"])

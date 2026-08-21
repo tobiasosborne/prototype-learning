@@ -8,11 +8,15 @@ Common random numbers (shot-noise programme, item 2).  Kiefer–Wolfowitz estima
 from ``(f(x + c) − f(x − c)) / 2c``.  With independent shot noise of variance ``σ²`` on each
 evaluation the estimate has variance ``σ²/(2c²)`` — at ``c = 0.2`` that is 12.5 σ², which is why
 finite-difference optimisation on a sampled backend stalls.  If both probes are evaluated with the
-*same* random draws (the same ``u_i`` fed to the inverse CDF of the two nearby distributions),
-the noise largely cancels and the variance becomes ``O(c²/N)`` (the two multinomials are coupled
-through the same uniforms, so ``f(x+c) − f(x−c)`` only sees the draws that fall between the two
-CDFs).  On hardware the analogue is interleaving the ``±c`` circuits in one job so they share
-drift; on a simulator it is :meth:`ShotBackend.common_random_numbers`, which
+*same* random draws the noise largely cancels.  (Scaling, stated carefully — review 003 #4:
+with the maximal coupling below only a fraction
+``TV(p₊, p₋) = O(c)`` of the ``N`` shots differ between the probes, so the *difference of the two
+estimates* has variance ``O(c/N)`` and the *slope* ``(f₊ − f₋)/2c`` has variance ``O(1/(cN))``,
+against ``O(1/(c²N))`` with independent draws — a ``1/c`` improvement, measured as 3× at
+``c = 0.2`` and 12–22× at ``c = 0.05`` on the bit-count loss.  CRN reduces variance; it does not
+remove the bias of a non-linear plug-in loss such as the KL of ``counts/N``.)  On hardware the
+analogue is interleaving the ``±c`` circuits in one job so they share drift; on a simulator it is
+:meth:`ShotBackend.common_random_numbers`, which
 :func:`ptqnn.train.kwsa.minimise` enters for every coordinate's probe triple via
 ``probe_context``.
 
@@ -25,7 +29,7 @@ coupling can achieve (Lindvall, *Lectures on the Coupling Method*, 1992).  Inver
 with shared uniforms alone is *not* enough here: a parameter change moves mass between distant
 basis indices, so the shared-uniform coupling changes ``N · Σ_i |F_new(i) − F_ref(i)|`` draws,
 which for the bit-count loss was measured at only a 1.3× variance reduction; the maximal
-coupling is what delivers the ``O(c²)`` behaviour.
+coupling is what delivers the ``1/c`` improvement.
 """
 
 from __future__ import annotations

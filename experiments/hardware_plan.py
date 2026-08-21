@@ -48,9 +48,11 @@ import dataclasses
 import json
 import math
 import platform
+import re
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -170,17 +172,51 @@ def idle_fidelity(t_ns: float, t1_us: float, t2_us: float) -> float:
     return 0.5 + (2.0 * big + lam) / 6.0
 
 
+def idle_gaps_ns(circuit: ir.Circuit, dev: presets.DeviceSpec) -> list[float]:
+    """Per-qubit *idle* time on the ASAP schedule: the total circuit duration minus the time the
+    qubit spends inside gates.  This is what the noise model relaxes during idling; gate-time
+    relaxation is already inside the vendor's gate error (review 003 #5)."""
+    model = dev.noise_model()
+    sched = model.schedule(circuit)
+    busy = [0.0] * circuit.n_qubits
+    for op in circuit.ops:
+        if isinstance(op, ir.Gate):
+            d = model.duration_ns(op)
+            for q in op.qubits:
+                busy[q] += d
+    return [max(0.0, sched.total_ns - b) for b in busy]
+
+
 def fidelity_budget(
-    dev: presets.DeviceSpec, n_1q: int, n_2q: int, depth: int, t_gate_ns: float | None, nq: int
+    dev: presets.DeviceSpec,
+    n_1q: int,
+    n_2q: int,
+    depth: int,
+    t_gate_ns: float | None,
+    nq: int,
+    idle_ns: Sequence[float] | None = None,
 ) -> dict[str, Any]:
+    """Multiplicative survival estimate.  ``F_idle`` charges relaxation over each qubit's *idle
+    gaps* only (``idle_ns``; the vendor's gate error already contains relaxation during gates);
+    ``F_idle_fullpath`` is the older, pessimistic variant that charged the whole critical path on
+    every qubit, kept for comparison.  Readout: mean of p01, p10 per qubit."""
     f2 = (1.0 - dev.gate_2q_error) ** n_2q
     f1 = (1.0 - dev.gate_1q_error) ** n_1q if "gate_1q" not in dev.missing_fields else None
     mem = memory_error(dev)
     idle: float | None
+    idle_full: float | None = None
     idle_how: str
     if dev.t1_us is not None and dev.t2_us is not None and t_gate_ns:
-        idle = idle_fidelity(t_gate_ns, dev.t1_us, dev.t2_us) ** nq
-        idle_how = f"F_avg(t={t_gate_ns:.4g} ns, T1={dev.t1_us:g} µs, T2={dev.t2_us:g} µs)^{nq}"
+        idle_full = idle_fidelity(t_gate_ns, dev.t1_us, dev.t2_us) ** nq
+        if idle_ns is not None:
+            idle = float(np.prod([idle_fidelity(t, dev.t1_us, dev.t2_us) for t in idle_ns]))
+            idle_how = (
+                f"Π_q F_avg(idle gap of q; T1={dev.t1_us:g} µs, T2={dev.t2_us:g} µs), "
+                f"gaps {min(idle_ns):.0f}–{max(idle_ns):.0f} ns of a {t_gate_ns:.0f} ns path"
+            )
+        else:
+            idle = idle_full
+            idle_how = f"F_avg(full path t={t_gate_ns:.4g} ns)^{nq} (no schedule given)"
     elif mem is not None:
         idle = (1.0 - mem) ** (nq * depth)
         idle_how = f"(1 − {mem:g})^({nq}·{depth}) [ASSUMPTION: memory error per depth-1 time]"
@@ -196,6 +232,7 @@ def fidelity_budget(
         "F_2q": f2,
         "F_1q": f1,
         "F_idle": idle,
+        "F_idle_fullpath": idle_full,
         "F_idle_how": idle_how,
         "F_readout": ro,
         "F_total": total,
@@ -302,6 +339,7 @@ def section_fidelity(
                 int(m["depth"] or 0),
                 m.get("gate_time_ns"),
                 circuits[cname].n_qubits,
+                idle_ns=idle_gaps_ns(cc.circuit, dev),
             )
             row["sim_tvd"] = None
             if simulate:
@@ -340,9 +378,11 @@ def section_fidelity(
     return out
 
 
-def _qiskit_critical_path_ns(isa: Any, dev: presets.DeviceSpec) -> float:
-    """ASAP critical path of a qiskit ISA circuit with the preset's durations (rz is virtual)."""
+def _qiskit_critical_path_ns(isa: Any, dev: presets.DeviceSpec) -> tuple[float, list[float]]:
+    """ASAP critical path of a qiskit ISA circuit with the preset's durations (rz is virtual),
+    and each qubit's idle time (path minus its own gate time)."""
     finish = [0.0] * isa.num_qubits
+    busy = [0.0] * isa.num_qubits
     for inst in isa.data:
         qs = [isa.find_bit(q).index for q in inst.qubits]
         if inst.operation.name in ("rz", "barrier", "measure", "id"):
@@ -354,7 +394,10 @@ def _qiskit_critical_path_ns(isa: Any, dev: presets.DeviceSpec) -> float:
         start = max(finish[q] for q in qs)
         for q in qs:
             finish[q] = start + dt
-    return max(finish)
+            busy[q] += dt
+    total = max(finish)
+    used = sorted({isa.find_bit(q).index for inst in isa.data for q in inst.qubits})
+    return total, [total - busy[q] for q in used]
 
 
 def section_sabre(circuits: dict[str, ir.Circuit], fez: presets.DeviceSpec) -> dict[str, Any]:
@@ -367,9 +410,9 @@ def section_sabre(circuits: dict[str, ir.Circuit], fez: presets.DeviceSpec) -> d
             ops = dict(isa.count_ops())
             n2 = sum(v for k, v in ops.items() if k in ("cz", "ecr", "cx"))
             n1 = sum(v for k, v in ops.items() if k in ("sx", "x"))  # rz is virtual on Heron
-            t_gate = _qiskit_critical_path_ns(isa, fez)
+            t_gate, gaps = _qiskit_critical_path_ns(isa, fez)
             nq = circuits[cname].n_qubits
-            fb = fidelity_budget(fez, n1, n2, isa.depth(), t_gate, nq)
+            fb = fidelity_budget(fez, n1, n2, isa.depth(), t_gate, nq, idle_ns=gaps)
             out[cname][f"O{level}"] = {
                 "n_2q": n2,
                 "n_1q_physical": n1,
@@ -453,47 +496,201 @@ def section_noise_run() -> dict[str, Any]:
     return out
 
 
-def section_stateprep(n: int = 12, k_train: int = 120) -> dict[str, Any]:
-    """Dense: Shende–Bullock–Markov ``2^{n+1} − 2n − 2`` CNOTs (Möttönen et al. is ``2^{n+1} − 2n``
-    for ``n`` qubits); Plesch–Brukner ``≈ 23/24·2^n``.  Sparse (``k`` non-zero amplitudes):
-    Gleinig–Hoefler ``O(k·n)``; we quote the leading term ``k·n`` with ``k = 120`` = Iris
-    train split (``[ASSUMPTION]``; the constant is implementation-dependent)."""
-    dense_sbm = 2 ** (n + 1) - 2 * n - 2
+IRIS_RUNS = (
+    ROOT / "experiments/runs/iris/20260820T144849Z",
+    ROOT / "experiments/runs/iris/20260820T145454Z",
+    ROOT / "experiments/runs/iris/20260820T145455Z",
+)
+
+
+def section_stateprep(n: int = 12) -> dict[str, Any]:
+    """Two-qubit-gate counts for loading the Iris training state.
+
+    What is actually prepared (``tasks/iris/model.py: dataset_superposition``) is a uniform
+    superposition over the *distinct* 12-bit codes of the training split — 14 / 12 / 14 for the
+    three recorded runs — not one amplitude per sample (review 003 blocker 1; an earlier version
+    used k = 120 samples and over-counted by ~9×).  Dense bounds: Shende–Bullock–Markov
+    ``2^(n+1) − 2n`` CNOTs (IEEE TCAD 25, 1000 (2006)); Plesch–Brukner ``≈ 23/24·2^n`` (PRA 83,
+    032302 (2011)).  Sparse: Gleinig–Hoefler is ``O(k·n)`` (DAC 2021); only the *leading term*
+    ``k·n`` is quoted and the implementation constant is unknown, so the sparse fidelity is an
+    order-of-magnitude figure, not a bound in either direction.
+    """
+    ks = []
+    for run in IRIS_RUNS:
+        meta = json.loads((run / "meta.json").read_text())
+        ks.append(int(meta["split"]["distinct_train_codes"]))
+    dense_sbm = 2 ** (n + 1) - 2 * n
     dense_pb = 23 / 24 * 2**n
-    sparse = k_train * n
     h2 = presets.device("quantinuum_h2_1")
+    e2 = h2.gate_2q_error
+    net_2q = 104  # iris_17q on all-to-all, numbers.md §compiled
     return {
         "n": n,
+        "k_distinct_train_codes_per_run": ks,
         "dense_cnots_sbm": dense_sbm,
         "dense_cnots_plesch_brukner": round(dense_pb),
-        "sparse_cnots_leading_term": sparse,
-        "k_train": k_train,
-        "h2_1_fidelity_dense_sbm": (1 - h2.gate_2q_error) ** dense_sbm,
-        "h2_1_fidelity_dense_pb": (1 - h2.gate_2q_error) ** dense_pb,
-        "h2_1_fidelity_sparse": (1 - h2.gate_2q_error) ** sparse,
+        "sparse_cnots_leading_term_per_run": [k * n for k in ks],
+        "h2_1_fidelity_dense_sbm": (1 - e2) ** dense_sbm,
+        "h2_1_fidelity_dense_pb": (1 - e2) ** dense_pb,
+        "h2_1_fidelity_sparse_leading_term_per_run": [(1 - e2) ** (k * n) for k in ks],
+        "h2_1_fidelity_sparse_plus_network_per_run": [(1 - e2) ** (k * n + net_2q) for k in ks],
+        "network_2q_h2_1": net_2q,
+        "caveat": "sparse figures use the leading term k·n of an O(k·n) construction; an exact "
+        "count needs an actual state-preparation circuit, which this repository does not build",
     }
 
 
 # --- provenance ---------------------------------------------------------------------------------
 
-# Which TOML provenance ``field`` strings vouch for which DeviceSpec attribute.  A provenance entry
-# whose field is ``"snapshot epoch"`` vouches for every field of that file (one coherent vendor
-# snapshot, e.g. ibm_fez's props_fez.json).
-_FIELD_KEYS: dict[str, tuple[str, ...]] = {
-    "gate_1q_error": ("gate_1q.error", "gate_1q"),
-    "gate_1q_ns": ("gate_1q.duration", "gate_1q"),
-    "gate_2q_error": ("gate_2q.error", "gate_2q"),
-    "gate_2q_ns": ("gate_2q.duration", "gate_2q"),
-    "t1_us": ("t1_us",),
-    "t2_us": ("t2_us",),
-    "readout_p01": ("readout",),
-    "readout_p10": ("readout",),
-    "readout_ns": ("readout.duration", "readout_length", "readout"),
-    "memory_error": ("memory error",),
-    "n_qubits": ("n_qubits",),
-    "topology": ("topology",),
-    "native_2q": ("native_2q",),
+# Canonical provenance field ids for every DeviceSpec attribute the plan reads.  An entry's
+# ``field`` string may list several ids separated by commas, each optionally followed by a
+# parenthetical note; its ``value`` is then a list in the same order (or, for the two native-gate
+# lists, the union of both lists).  Review 003 #2: the earlier validator matched substrings and
+# never compared values, so a "snapshot epoch" entry vouched for every IBM field and a duration
+# entry could vouch for an error rate.  This one demands an exact id *and* an equal value.
+_FIELD_IDS: dict[str, tuple[str, ...]] = {
+    "gate_1q_error": ("noise.gate_1q.error_median",),
+    "gate_1q_ns": ("noise.gate_1q.duration_ns",),
+    "gate_2q_error": ("noise.gate_2q.error_median",),
+    "gate_2q_ns": ("noise.gate_2q.duration_ns",),
+    "t1_us": ("noise.t1_us.median",),
+    "t2_us": ("noise.t2_us.median",),
+    "readout_p01": ("noise.readout.p01", "noise.readout.error_median"),
+    "readout_p10": ("noise.readout.p10", "noise.readout.error_median"),
+    "readout_ns": ("noise.readout.duration_ns",),
+    "memory_error": ("noise.notes (memory error, in lieu of T1/T2)",),
+    "n_qubits": ("device.n_qubits",),
+    "topology": ("device.topology",),
+    "native_1q": ("device.native_1q",),
+    "native_2q": ("device.native_2q",),
 }
+_MEMORY_ID = "noise.notes (memory error, in lieu of T1/T2)"
+
+
+def _entry_values(entry: dict[str, Any]) -> dict[str, Any]:
+    """``{canonical id: value}`` for one ``[[provenance]]`` entry."""
+    raw = str(entry.get("field", ""))
+    if raw.strip() == _MEMORY_ID:
+        return {_MEMORY_ID: entry.get("value")}
+    # strip every parenthetical note *before* splitting: notes may contain commas
+    stripped = re.sub(r"\([^)]*\)", "", raw)
+    ids = [part.strip() for part in stripped.split(",") if part.strip()]
+    if not ids or not any("." in i for i in ids):
+        return {}  # free-text fields such as "snapshot epoch" vouch for nothing
+    # "noise.readout.error_median, p01, p10, duration_ns": later short names share the prefix
+    full: list[str] = []
+    for i in ids:
+        if "." not in i and full:
+            i = full[-1].rsplit(".", 1)[0] + "." + i
+        full.append(i)
+    value = entry.get("value")
+    if len(full) == 1:
+        return {full[0]: value}
+    if set(full) <= {"device.native_1q", "device.native_2q"} and isinstance(value, list):
+        return {i: value for i in full}  # union of both gate lists
+    if isinstance(value, list) and len(value) == len(full):
+        return dict(zip(full, value, strict=True))
+    return {}  # shape we cannot interpret: vouches for nothing
+
+
+def _values_match(used: Any, vouched: Any, field: str) -> bool:
+    if field in ("native_1q", "native_2q"):
+        want = {str(g).lower() for g in used}
+        have = {str(g).lower() for g in (vouched if isinstance(vouched, list) else [vouched])}
+        return want <= have
+    if isinstance(used, str):
+        return str(vouched) == used
+    try:
+        return math.isclose(float(used), float(vouched), rel_tol=1e-6, abs_tol=0.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def section_provenance(devices: dict[str, presets.DeviceSpec]) -> dict[str, Any]:
+    """Per device: which published number vouches for each field *with the same value*; fields
+    with no such entry are ``unsourced``.  Values substituted by this script (``ASSUMED_1Q_NS``)
+    are validated against the raw preset and reported as substitutions."""
+    out: dict[str, Any] = {}
+    for name, dev in devices.items():
+        raw = presets.device(name, allow_missing=True)
+        substituted: dict[str, Any] = {}
+        if name in ASSUMED_1Q_NS and dev.gate_1q_ns != raw.gate_1q_ns:
+            substituted["gate_1q_ns"] = {"used": dev.gate_1q_ns, "published": raw.gate_1q_ns}
+        used: dict[str, Any] = {
+            "gate_1q_error": raw.gate_1q_error,
+            "gate_1q_ns": raw.gate_1q_ns,
+            "gate_2q_error": raw.gate_2q_error,
+            "gate_2q_ns": raw.gate_2q_ns,
+            "t1_us": raw.t1_us,
+            "t2_us": raw.t2_us,
+            "readout_p01": raw.readout_p01,
+            "readout_p10": raw.readout_p10,
+            "readout_ns": raw.readout_ns,
+            "memory_error": memory_error(raw),
+            "n_qubits": raw.n_qubits,
+            "topology": raw.topology,
+            "native_1q": list(raw.native_1q),
+            "native_2q": list(raw.native_2q),
+        }
+        # every other attribute the compile/fidelity path reads must equal the raw preset
+        for attr in (
+            "gate_1q_error",
+            "gate_2q_error",
+            "gate_2q_ns",
+            "t1_us",
+            "t2_us",
+            "readout_p01",
+            "readout_p10",
+            "readout_ns",
+            "n_qubits",
+            "topology",
+            "native_1q",
+            "native_2q",
+        ):
+            if getattr(dev, attr) != getattr(raw, attr):
+                raise RuntimeError(f"{name}.{attr} differs from the published preset")
+        entries = [(e, _entry_values(e)) for e in raw.provenance]
+        fields: dict[str, Any] = {}
+        unsourced: list[str] = []
+        for key, value in used.items():
+            if value in (None, 0, 0.0, "", []):
+                fields[key] = {"value": value, "status": "not published / not used"}
+                continue
+            hits = [
+                e
+                for e, vals in entries
+                if any(
+                    cid in vals and _values_match(value, vals[cid], key) for cid in _FIELD_IDS[key]
+                )
+            ]
+            if not hits:
+                unsourced.append(key)
+                fields[key] = {"value": value, "status": "UNSOURCED"}
+                continue
+            fields[key] = {
+                "value": value,
+                "sources": [
+                    {
+                        "field": str(e.get("field", "")),
+                        "value": e.get("value"),
+                        "url": str(e.get("source_url", "")),
+                        "kind": str(e.get("source_kind", "")),
+                        "retrieved_at": str(e.get("retrieved_at", "")),
+                        "quote": str(e.get("quote", "")),
+                    }
+                    for e in hits
+                ],
+            }
+        if unsourced:
+            log(f"PROVENANCE GAP {name}: {unsourced}")
+        out[name] = {
+            "fields": fields,
+            "unsourced": unsourced,
+            "n_provenance_entries": len(entries),
+            "substituted": substituted,
+        }
+    return out
+
 
 ASSUMPTIONS: tuple[dict[str, str], ...] = (
     {
@@ -539,9 +736,10 @@ ASSUMPTIONS: tuple[dict[str, str], ...] = (
     },
     {
         "id": "A7",
-        "assumption": "Dense state-prep CNOT counts 2^(n+1) − 2n − 2 (Shende–Bullock–Markov, "
+        "assumption": "Dense state-prep CNOT counts 2^(n+1) − 2n (Shende–Bullock–Markov, "
         "IEEE TCAD 25, 1000 (2006)) and ≈23/24·2^n (Plesch–Brukner, PRA 83, 032302 (2011)); "
-        "sparse leading term k·n (Gleinig–Hoefler, DAC 2021) with k = 120 Iris training points",
+        "sparse *leading term* k·n of Gleinig–Hoefler's O(k·n) (DAC 2021) with k = the 12–14 "
+        "distinct training codes the Iris runs prepare (constant unknown)",
         "affects": "stateprep section / report §3.3",
         "basis": "published asymptotic bounds; the sparse constant is implementation-dependent",
     },
@@ -558,67 +756,22 @@ ASSUMPTIONS: tuple[dict[str, str], ...] = (
         "affects": "Flappy sim TVD column",
         "basis": "our choice of representative inputs",
     },
+    {
+        "id": "A10",
+        "assumption": "Lattice devices are compiled onto a synthetic heavy-hex / square patch of "
+        "the circuit's size with greedy routing; Google's and Rigetti's native gate sets are "
+        "rebased through the GENERIC fallback (see compilation notes in §fidelity)",
+        "affects": "every compiled count, duration and fidelity of the lattice devices",
+        "basis": "no live coupling maps; CompiledCircuit.notes records the fallback per device",
+    },
+    {
+        "id": "A11",
+        "assumption": "F_idle charges relaxation only over each qubit's idle gaps; relaxation "
+        "during gates is taken to be inside the vendor's gate error",
+        "affects": "F_idle and F; the full-path variant is printed beside it",
+        "basis": "randomised-benchmarking gate errors include decoherence during the gate",
+    },
 )
-
-
-def section_provenance(devices: dict[str, presets.DeviceSpec]) -> dict[str, Any]:
-    """Per device: which published number backs each field, and which fields have none."""
-    out: dict[str, Any] = {}
-    for name in devices:
-        raw = presets.device(name, allow_missing=True)  # before any ASSUMED_1Q_NS substitution
-        entries = list(raw.provenance)
-        epoch = [e for e in entries if str(e.get("field", "")).strip() == "snapshot epoch"]
-        used: dict[str, Any] = {
-            "gate_1q_error": raw.gate_1q_error,
-            "gate_1q_ns": raw.gate_1q_ns,
-            "gate_2q_error": raw.gate_2q_error,
-            "gate_2q_ns": raw.gate_2q_ns,
-            "t1_us": raw.t1_us,
-            "t2_us": raw.t2_us,
-            "readout_p01": raw.readout_p01,
-            "readout_p10": raw.readout_p10,
-            "readout_ns": raw.readout_ns,
-            "memory_error": memory_error(raw),
-            "n_qubits": raw.n_qubits,
-            "topology": raw.topology,
-            "native_2q": list(raw.native_2q),
-        }
-        fields: dict[str, Any] = {}
-        unsourced: list[str] = []
-        for key, value in used.items():
-            if value in (None, 0, 0.0, "", []):
-                fields[key] = {"value": value, "status": "not published / not used"}
-                continue
-            hits = [
-                e for e in entries if any(k in str(e.get("field", "")) for k in _FIELD_KEYS[key])
-            ] or epoch
-            if not hits:
-                unsourced.append(key)
-                fields[key] = {"value": value, "status": "UNSOURCED"}
-                continue
-            fields[key] = {
-                "value": value,
-                "sources": [
-                    {
-                        "field": str(e.get("field", "")),
-                        "value": e.get("value"),
-                        "url": str(e.get("source_url", "")),
-                        "kind": str(e.get("source_kind", "")),
-                        "retrieved_at": str(e.get("retrieved_at", "")),
-                        "quote": str(e.get("quote", "")),
-                    }
-                    for e in hits
-                ],
-            }
-        if unsourced:
-            log(f"PROVENANCE GAP {name}: {unsourced}")
-        out[name] = {
-            "fields": fields,
-            "unsourced": unsourced,
-            "n_provenance_entries": len(entries),
-            "substituted": {"gate_1q_ns": ASSUMED_1Q_NS[name]} if name in ASSUMED_1Q_NS else {},
-        }
-    return out
 
 
 # --- rendering ----------------------------------------------------------------------------------
@@ -673,13 +826,17 @@ def render(num: dict[str, Any], devices: list[str]) -> str:
     )
     for c, rows in num["fidelity"].items():
         w(f"\n### {c}\n")
-        w("| device | F_2q | F_1q | F_idle | idle model | F_ro | **F** | sim TVD |")
-        w("|---|---:|---:|---:|---|---:|---:|---:|")
+        w(
+            "| device | F_2q | F_1q | F_idle (gaps) | F_idle (full path, pessimistic) | "
+            "idle model | F_ro | **F** | sim TVD |"
+        )
+        w("|---|---:|---:|---:|---:|---|---:|---:|---:|")
         for d, r in rows.items():
             tot = f"**{r['F_total']:.3f}**" + (" (upper bound)" if r["upper_bound_only"] else "")
             w(
                 f"| {d} | {_f(r['F_2q'])} | {_f(r['F_1q'])} | {_f(r['F_idle'])} | "
-                f"{r['F_idle_how']} | {_f(r['F_readout'])} | {tot} | {_f(r['sim_tvd'])} |"
+                f"{_f(r['F_idle_fullpath'])} | {r['F_idle_how']} | {_f(r['F_readout'])} | {tot} | "
+                f"{_f(r['sim_tvd'])} |"
             )
 
     w("\n## sabre (qiskit transpile on the heavy-hex patch, ibm_fez durations)\n")
@@ -749,9 +906,9 @@ def render(num: dict[str, Any], devices: list[str]) -> str:
     )
 
     sp = num["stateprep"]
-    w("\n## stateprep (Iris, n = 12)\n")
+    w("\n## stateprep (Iris, n = 12; k = distinct training codes actually prepared)\n")
     for k, v in sp.items():
-        w(f"- {k}: {_f(v)}")
+        w(f"- {k}: {v if isinstance(v, (list, str)) else _f(v)}")
 
     w("\n## provenance (ground truth for every calibration number above)\n")
     w(

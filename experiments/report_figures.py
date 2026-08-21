@@ -205,7 +205,7 @@ def fig_bitcount_convergence() -> None:
         (axes[0], "superposition", PROTO, "superposition training"),
         (axes[1], "iterative", ORANGE, "iterative (one input per step) — our construction"),
     ):
-        for s, hist in h[key].items():
+        for hist in h[key].values():
             ax.plot(hist, color=color, alpha=0.55, lw=1.1)
         med = np.median(np.array(list(h[key].values())), axis=0)
         ax.plot(med, color=INK, lw=1.8, label="median of 6 seeds")
@@ -452,7 +452,8 @@ def fig_bitcount_noise_scale() -> None:
     ax.set_xscale("symlog", linthresh=0.25)
     ax.legend(loc="upper left")
     ax.set_title(
-        f"Response to noise strength; fitted KL ∝ s$^{{{r['slope_prototype']['loglog_exponent']:.1f}}}$",
+        "Response to noise strength; fitted KL ∝ s"
+        f"$^{{{r['slope_prototype']['loglog_exponent']:.1f}}}$",
         loc="left",
     )
     save(fig, "fig_bitcount_noise_scale")
@@ -787,7 +788,7 @@ def fig_hardware_qpu_time() -> None:
             ns = num["compiled"][c][d].get("critical_path_ns")
             t.append(shots * ns * 1e-9 if ns else np.nan)
         ax.barh(ys + (j - 0.5) * 0.36, t, height=0.34, color=color, label=label)
-        for y, v, d in zip(ys, t, DEVICE_ORDER, strict=True):
+        for y, v in zip(ys, t, strict=True):
             if np.isnan(v) and j == 0:
                 ax.text(
                     0.012, y, "no gate durations published", va="center", fontsize=6.5, color=INK2
@@ -829,7 +830,8 @@ def fig_bitcount_sampled_training() -> None:
         ax.set_title(f"N = {n:,}", loc="left")
     axes[0].set_ylabel("exact KL of the iterate")
     fig.suptitle(
-        "Bit-count KW–SA training when every loss evaluation is estimated from N shots (3 seeds: median, min–max)",
+        "Bit-count KW–SA training when every loss evaluation is estimated from N shots "
+        "(3 seeds: median, min–max)",
         fontsize=8.5,
         y=1.02,
     )
@@ -1059,7 +1061,7 @@ def main() -> None:
     for f in ALL:
         try:
             f()
-        except Exception as e:  # noqa: BLE001 — report every failure, then fail loudly
+        except Exception as e:
             log(f"FAILED {getattr(f, '__name__', 'lambda')}: {type(e).__name__}: {e}")
             failures.append((getattr(f, "__name__", "lambda"), repr(e)))
     log(

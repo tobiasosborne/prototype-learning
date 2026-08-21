@@ -64,6 +64,14 @@ retrieved_at = 2026-08-20
 quote = "Native gate set: single-qubit rotations, two-qubit ZZ gates, arbitrary-angle ZZ gates, general SU(4) entangler"
 
 [[provenance]]
+field = "device.native_1q"
+value = ["U1q", "Rz"]
+source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H1%20Product%20Data%20Sheet.pdf"
+source_kind = "spec_sheet"
+retrieved_at = 2026-08-20
+quote = "Native gate set: single-qubit rotations, two-qubit ZZ gates, arbitrary-angle ZZ gates, general SU(4) entangler  [the data sheet says 'single-qubit rotations'; the names U1q (arbitrary-axis rotation in the XY plane) and Rz are Quantinuum's own gate names as exposed by pytket-quantinuum]"
+
+[[provenance]]
 field = "device.technology"
 value = "trapped ion, 171Yb+ hyperfine qubits, QCCD linear trap, 5 gate zones (System Model H1)"
 source_url = "https://docs.quantinuum.com/systems/_static/assets/data_sheets/Quantinuum%20H1%20Product%20Data%20Sheet.pdf"

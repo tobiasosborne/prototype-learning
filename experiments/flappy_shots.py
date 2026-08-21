@@ -64,10 +64,15 @@ def log(msg: str) -> None:
 
 
 def git_hash() -> str:
+    """HEAD, with a ``-dirty`` suffix when the tree has uncommitted changes (review 003 #3)."""
     try:
-        return subprocess.run(
+        head = subprocess.run(
             ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True, cwd=ROOT
         ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT
+        ).stdout.strip()
+        return f"{head}-dirty" if dirty else head
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 

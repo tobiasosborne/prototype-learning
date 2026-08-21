@@ -92,11 +92,16 @@ class ObjectiveConfig:
     angle_scale: float = 1.0
     cache_levels: int = 64
     margin: float = 0.0
-    """Margin-aware training (shot-noise programme, item 1): frames whose decision margin
-    ``δ = |P(out=1) − ½|`` is below ``margin`` are penalised by ``margin_weight · hinge``, with
-    ``hinge = mean_frames max(0, 1 − δ/margin)``.  Shots to decide a frame scale as ``1/δ²``, so
-    lifting the median margin from 0.02 to 0.1 is ×25 fewer shots; it costs nothing noiselessly.
-    ``margin = 0`` (default) reproduces the paper-style objective.  ``[ASSUMPTION]``."""
+    """Margin-aware training (shot-noise programme, item 1): every frame whose decision margin
+    ``δ = |P(out=1) − ½|`` is below ``margin`` costs ``margin_weight · 0.01 · (1 − δ/margin)`` —
+    a fraction of the ``0.01`` survival reward of that frame (``FlappyEnv``), so with
+    ``margin_weight < 1`` surviving a frame is always worth more than dying confidently.  (A first
+    version used ``margin_weight · mean_frames hinge`` with weight 20; the optimiser then
+    preferred a saturated policy that died in 30 frames with zero hinge — the penalty must be
+    per frame and smaller than the per-frame reward.)  Shots to decide a frame scale as ``1/δ²``,
+    so lifting the median margin from 0.02 to 0.1 is ×25 fewer shots; it costs nothing
+    noiselessly.  ``margin = 0`` (default) reproduces the paper-style objective.  ``[ASSUMPTION]``.
+    """
     margin_weight: float = 0.0
 
 
@@ -107,6 +112,24 @@ def margin_hinge(margins: Sequence[float], margin: float) -> float:
         return 0.0
     d = np.asarray(margins, dtype=np.float64)
     return float(np.mean(np.maximum(0.0, 1.0 - d / margin)))
+
+
+def margin_penalty(
+    margins: Sequence[float],
+    margin: float,
+    weight: float,
+    n_episodes: int,
+    step_reward: float = 0.01,
+) -> float:
+    """``weight · step_reward · Σ_frames max(0, 1 − δ/m) / n_episodes`` — the per-frame hinge
+    in units of the per-frame survival reward, averaged over episodes like the return.  With
+    ``weight < 1`` the *return-plus-penalty* contribution of one more frame is at least
+    ``step_reward·(1 − weight) > 0`` (at ``weight = 1`` a zero-margin frame merely ties); the
+    tracking term of the shaped loss is a mean and is not covered by this guarantee
+    (review 003 #7)."""
+    if margin <= 0 or weight <= 0 or len(margins) == 0:
+        return 0.0
+    return weight * step_reward * margin_hinge(margins, margin) * len(margins) / max(1, n_episodes)
 
 
 def make_policy(
@@ -197,8 +220,13 @@ def objective(
         policy = make_policy(net, params, c, backend)
         results = evaluate(policy, batch, c.max_steps, c.env_config, c.features)
         value = episode_loss(results, c.shaping_weight)
-        if c.margin > 0 and c.margin_weight > 0:
-            value += c.margin_weight * margin_hinge(policy.frame_margins, c.margin)
+        value += margin_penalty(
+            policy.frame_margins,
+            c.margin,
+            c.margin_weight,
+            len(batch),
+            step_reward=c.env_config.step_reward,
+        )
         return value
 
     return loss
@@ -264,8 +292,10 @@ def train(
     eval_steps: int = 5000,
     backend: Backend | None = None,
     callback: Callable[[int, Real, float], None] | None = None,
+    x0: Real | None = None,
 ) -> FlappyTrainResult:
-    """Random multi-start, then KW–SA on the shaped episode return.
+    """Random multi-start, then KW–SA on the shaped episode return.  With ``x0`` given the
+    restarts are skipped and KW–SA starts there (fine-tuning).
 
     ``seeds`` are the training episodes — every loss evaluation plays all of them.  With
     ``batch > 0`` they instead become a pool from which each iteration draws a fresh
@@ -286,7 +316,16 @@ def train(
         k = replace(k, restate_incumbent=True)
 
     cheap = objective(net, train_seeds, replace(oc, max_steps=restart_steps), backend)
-    x0, f0 = random_restarts(net, cheap, n_restarts, rng)
+    loss = objective(net, train_seeds, oc, backend)
+    if x0 is None:
+        x0, f0 = random_restarts(net, cheap, n_restarts, rng)
+        extra_evaluations = n_restarts
+    else:
+        # Fine-tuning: score the start on the *training* objective so that init_loss and the
+        # final loss are comparable, and count that one evaluation (review 003 #3).
+        x0 = np.asarray(x0, dtype=np.float64).copy()
+        f0 = loss(x0)
+        extra_evaluations = 1
 
     def on_iteration(n: int, x: Real, fx: float) -> None:
         if callback is not None:
@@ -294,7 +333,6 @@ def train(
         if isinstance(train_seeds, SeedRotation):
             train_seeds.advance()
 
-    loss = objective(net, train_seeds, oc, backend)
     res = kwsa.minimise(loss, x0, k, callback=on_iteration)
     # Under a rotating batch "best loss ever seen" selects the luckiest batch; the final
     # accepted state is the honest answer (review 002 #8).
@@ -309,6 +347,6 @@ def train(
         history=res.history,
         kwsa=res,
         init_loss=f0,
-        evaluations=res.evaluations + n_restarts,
+        evaluations=res.evaluations + extra_evaluations,
         scores=[r.score for r in results],
     )
