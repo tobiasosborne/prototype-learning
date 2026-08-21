@@ -23,12 +23,12 @@ Remedy & Mechanism & Outcome \\
 1. Margin-aware training & add a penalty for frames whose margin $\delta$ is below $m=0.1$ &
 \textbf{negative}: margins of this network barely move; play under shot noise gets worse \\
 2. Common random numbers & evaluate the two finite-difference probes on the same measurement
-randomness (maximal coupling) & derivative variance $\div 3$ at the paper's step, $\div 12$--$22$
+randomness (maximal coupling) & derivative variance $\div 3$ at our reproduction's step ($c=0.2$), $\div 12$--$22$
 at small steps; sampled training improves at $N\le 4\,000$ but stays $10\times$ above the
-exact-probability result because the loss itself is biased \\
+exact-probability result, consistent with the bias of the loss itself \\
 3. Sequential decisions & Wald's sequential test on the sign of $\Pout-\tfrac12$ per frame &
-\textbf{positive}: $100\,\%$ perfect games at $2\,191$ shots/frame, $4.6\times$ fewer than the
-fixed budget that achieves the same \\
+\textbf{positive}: $100\,\%$ perfect games at about $2\,200$ shots/frame, $4.6\times$ fewer than
+the fixed budget that achieves the same \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -42,7 +42,7 @@ $(0.1/0.019)^2\approx 25\times$, at no cost on a noiseless simulator.  We added 
 objective a penalty of $w\times 0.01\times\max(0, 1-\delta/m)$ per played frame --- a fraction
 $w<1$ of the $0.01$ reward for surviving that frame, so that surviving a frame is always worth more
 than dying confidently --- and fine-tuned the trained controller for 25 sweeps with $m = 0.1$
-and $w\in\{0.25, 0.5, 1\}$ (run \run{flappy\_shots/20260821T075321Z}).  A first attempt with a
+and $w\in\{0.25, 0.5, 1\}$ (run \run{flappy\_shots/20260821T084601Z}).  A first attempt with a
 \emph{mean} hinge of weight 20, trained from scratch, had collapsed to a policy that died in 30
 frames with perfectly confident decisions (run \run{…T075048Z}): any penalty that can outweigh
 the per-frame reward selects for dying early, which is why the per-frame form is necessary.
@@ -65,7 +65,7 @@ the remedy as not working for this network.
 frames played by the original and the three margin-aware controllers.  Middle: perfect games
 against shots per frame for a fixed budget (lines) and for the sequential test (stars, at the
 mean shots it actually spent).  Right: mean shots per frame of the sequential test against its
-indifference margin $\delta_0$.  Run \run{flappy\_shots/20260821T075321Z}.}
+indifference margin $\delta_0$.  Run \run{flappy\_shots/20260821T084601Z}.}
 \label{fig:flappy-shots}
 \end{figure}
 
@@ -75,8 +75,8 @@ indifference margin $\delta_0$.  Run \run{flappy\_shots/20260821T075321Z}.}
 \paragraph{Mechanism.}
 The paper's optimiser estimates a slope as $(f(x+c)-f(x-c))/2c$.  If each probe is estimated
 from $N$ independent shots with variance $\sigma^2$, the slope has variance $\sigma^2/2c^2$ ---
-at the paper's $c=0.2$ that is $12.5\sigma^2$, which is why finite differences on a sampling
-backend stall.  If the two probes are instead computed from the \emph{same} random draws, the
+at our reproduction's $c=0.2$ that is $12.5\sigma^2$, which is why finite differences on a
+sampling backend stall.  If the two probes are instead computed from the \emph{same} random draws, the
 noise largely cancels.  The standard way (feeding the same uniform random numbers to the inverse
 cumulative distribution of both probes) turned out to give only a $1.3\times$ reduction here,
 because a parameter change moves probability between distant bit strings and so shifts every
@@ -85,25 +85,29 @@ probe, then for the second keep each shot's outcome $i$ with probability
 $\min(1, p_{\mathrm{new}}(i)/p_{\mathrm{ref}}(i))$ and redraw it otherwise from the excess
 $(p_{\mathrm{new}}-p_{\mathrm{ref}})_+$.  The second sample has exactly the right distribution,
 and only $N\cdot\TV(p_{\mathrm{new}},p_{\mathrm{ref}})$ shots change --- the fewest any coupling
-can achieve.  Since $\TV\propto c$, the variance of the slope falls from $O(1/(c^2N))$ to
-$O(c/N)$.  On hardware the analogue is to interleave the $\pm c$ circuits in one job so they
+can achieve.  Since $\TV\propto c$, the difference of the two estimates has variance $O(c/N)$ and
+the slope, after division by $2c$, has variance $O(1/(cN))$ instead of $O(1/(c^2N))$: a gain of
+order $1/c$.  Coupling reduces the variance of the slope; it does not remove the bias of a
+non-linear loss such as the plug-in KL.  On hardware the analogue is to interleave the $\pm c$ circuits in one job so they
 share the same drift.
 
 \paragraph{Measurement.}
 \Cref{fig:crn} measures the variance of one slope of the bit-count loss at $400$ shots per
 probe: the reduction is $\times 2$--$3$ at $c=0.2$--$0.4$ and $\times 22$--$29$ at $c=0.025$--$0.05$,
 as the $1/c$ scaling predicts, and both estimates are unbiased for the exact slope.
-\Cref{fig:sampled-training} then trains the 11-qubit bit-count network with the paper's own
-schedule on a sampling backend (run \run{bitcount\_shots/20260821T074944Z}): at $N=1\,000$
+\Cref{fig:sampled-training} then trains the 11-qubit bit-count network with our reproduction's
+schedule (the paper publishes none) on a sampling backend (run \run{bitcount\_shots/20260821T084558Z}): at $N=1\,000$
 shots per evaluation the exact KL after 20 sweeps improves from $0.080$ to $0.059$ with common
 random numbers, at $4\,000$ from $0.050$ to $0.014$, and at $16\,000$ the two are within the
 seed-to-seed spread ($0.029$ vs $0.033$).  All of them remain an order of magnitude above the
-exact-probability result ($0.0009$), and the reason is visible in the right panel: the
-\emph{loss} is the plug-in KL of a 32-bin histogram from about $N/2$ usable shots, biased by
-$31.8/N$, and the optimiser faithfully minimises that biased quantity.  Common random numbers fix
-the gradient noise; they cannot fix the estimator.  The paper's step schedule ($c_0 = 0.2$
-decaying only to $0.15$ over 20 sweeps) also keeps the optimiser in the regime where the
-reduction is smallest.
+exact-probability result ($0.0009$).  The right panel suggests why: the \emph{loss} is the plug-in
+KL of a 32-bin histogram from about $N/2$ usable shots, biased by $31.8/N$, and the reached KL
+tracks one to three times that bias.  This is consistent with the estimator, not the optimiser,
+being what now limits sampled training, but three seeds (one of which stalls at $0.014$ even on
+exact probabilities) cannot separate the two; a bias-corrected or joint loss under paired
+initialisations is the test, and it has not been run.  Our step schedule ($c_0 = 0.2$ decaying
+only to $0.15$ over 20 sweeps) also keeps the optimiser in the regime where the reduction is
+smallest.
 
 \begin{figure}[t]
 \centering
@@ -128,7 +132,7 @@ bounded only beyond $\delta_0$.}
 \caption{Bit-count training when every loss evaluation is estimated from $N$ shots (three
 seeds; median and range), with and without common random numbers, against training on exact
 probabilities.  Right: the exact KL reached after 20 sweeps against $N$, with the plug-in bias
-of the loss for comparison.  Run \run{bitcount\_shots/20260821T074944Z}.}
+of the loss for comparison.  Run \run{bitcount\_shots/20260821T084558Z}.}
 \label{fig:sampled-training}
 \end{figure}
 
@@ -163,7 +167,7 @@ sizes per frame.
 \centering\small
 \caption{Flappy, original controller, 20 held-out games: fixed shot budgets against the
 sequential test ($\alpha=\beta=0.05$).  ``Flips'' are frames decided differently from the
-exact rule.  Run \run{flappy\_shots/20260821T075321Z}.}
+exact rule.  Run \run{flappy\_shots/20260821T084601Z}.}
 \label{tab:sprt}
 \begin{tabular}{@{}l S[table-format=3.0] S[table-format=3.0] S[table-format=2.2] S[table-format=5.0]@{}}
 \toprule

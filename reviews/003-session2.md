@@ -51,7 +51,7 @@ Fix: use exact canonical field identifiers, compare scalar/list values, validate
 
 ### 3. The shot runs’ recorded git hashes do not identify their source, and the Flappy training summary compares different objectives
 
-Locations: `experiments/bitcount_shots.py:54-60`, `experiments/flappy_shots.py:66-72`, `src/ptqnn/tasks/flappy/train.py:304-332`, `experiments/runs/flappy_shots/20260821T075321Z/results.md:3`.
+Locations: `experiments/bitcount_shots.py:54-60`, `experiments/flappy_shots.py:66-72`, `src/ptqnn/tasks/flappy/train.py:304-332`, `experiments/runs/flappy_shots/20260821T084601Z/results.md:3`.
 
 Both shot runs record hash `6767bb6`, but neither experiment script exists at that commit (`git cat-file -e 6767bb6:<script>` exits 128). More seriously, the recorded commit’s Flappy trainer has neither `x0` nor the per-frame penalty used to produce the run. Unlike `hardware_plan.py`, these scripts do not record a dirty suffix.
 
@@ -176,3 +176,19 @@ Location: `experiments/report_figures.py:208,455,790,832,1062`.
 - `_qiskit_critical_path_ns` reproduced the recorded O1–O3 paths; the actual ISA circuits contain only `sx/x/rz/cz`, so its treatment of measurement/readout is correct for these runs.
 - More than eight hardware figures were independently reconciled against `numbers.md` and the TOMLs, including Flappy logical `7q/d14/12 CRX/19 1q`; H2 Flappy `24 entanglers/d36`; Fez Flappy `90/22 swaps/d297/12.888 µs`; IQM bit-count `207/49/d485/18.130 µs`; all four H2 Flappy fidelity factors; Fez SABRE O2 `37 CZ/100 physical 1q/d98/F=0.718745`; `P(out=1)=0.487091`; KL coefficient `31.8216`; and the IBM/IonQ/IQM cost rows.
 - Full non-slow suite: `435 passed, 3 skipped, 6 deselected` in 28.43 s. Mypy passed for all 40 source files.
+
+---
+
+## Resolution (main session, 2026-08-21)
+
+| # | Decision |
+|---|---|
+| B1 (Iris state prep) | **Fixed.** `section_stateprep` now takes k from the Iris runs' `distinct_train_codes` (14/12/14): leading term k·n = 144–168, H2-1 factor 0.83 (0.74–0.76 with the network); SBM count corrected to 2^(n+1)−2n = 8168. `reports/hardware-plan.md` §3.3 and the tex report no longer claim "Iris is out of reach"; they say the question cannot be settled without an actual sparse preparation circuit. Test `test_stateprep_uses_distinct_training_codes`. |
+| 2 (provenance validator) | **Fixed.** Exact canonical field ids (parentheticals stripped before splitting, combined entries mapped positionally, native-gate unions as supersets), value comparison (`isclose` rel 1e-6 / string equality / list ⊆), no `snapshot epoch` wildcard, `native_1q` checked (provenance entries added to the two Quantinuum TOMLs from their data sheets), the passed `DeviceSpec` is cross-checked against the raw preset (substitutions reported). Mutation tests `test_provenance_validator_compares_values_and_rejects_wildcards`, `test_entry_values_parses_combined_fields`. Compilation notes now rendered in `numbers.md` §fidelity; assumptions A10 (synthetic patches / gate-set fallback) and A11 (idle gaps) added. The strict validator immediately found two genuine parser gaps (IQM T1/T2, Rigetti 2q error) that the old one had hidden. |
+| 3 (hashes, loss arrows, evaluation count) | **Fixed.** Both shot scripts record a `-dirty` suffix; `train(x0=…)` scores `init_loss` on the training objective and counts one evaluation instead of `n_restarts`. Both experiments re-run at a clean commit (new run dirs cited in reports/tex). |
+| 4 (CRN scaling / causality) | **Fixed (statements).** Docstrings, noise.md and the tex report now state slope variance O(1/(cN)) vs O(1/(c²N)) (a 1/c gain), describe CRN as variance reduction only, and downgrade "the bias is what limits" to "consistent with; untested — needs a corrected/joint loss under paired initialisations and more seeds". The comparison itself is queued as programme item 4 (HANDOFF). |
+| 5 (idle double counting) | **Fixed.** `fidelity_budget` charges relaxation over each qubit's idle gaps of the ASAP schedule (`idle_gaps_ns`; qiskit ISA circuits likewise); the full-path variant is kept as `F_idle_fullpath` and printed beside it, labelled pessimistic. Fidelity tables regenerated. |
+| 6 (wording) | **Fixed.** "paper schedule / paper's c / paper's 2 160 evaluations" → "our reproduction schedule (the paper publishes none)" in bitcount_shots.py, noise.md, tex 06/07. |
+| 7 (margin scaling) | **Fixed.** `margin_penalty` takes `step_reward` from `env_config`; docstring states the guarantee covers the return-plus-penalty component with weight < 1 (weight = 1 ties) and not the tracking term. |
+| 8 (SNR arithmetic, static bias) | **Fixed.** hardware-plan.md §4: SNR ≈ 12.7 (18 for the two-probe difference); only additive offsets cancel, a bit-flip-like static channel rescales the derivative by (1−2e). |
+| 9 (lint) | **Fixed.** `ruff check src tests experiments` clean; check-all green at session close. |

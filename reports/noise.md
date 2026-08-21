@@ -71,17 +71,17 @@ Measured cost for the full grid (why it was not run): one 9-qubit noisy window �
 
 ## Shots — the binding constraint, and three remedies (session 2)
 
-Runs `experiments/runs/bitcount_shots/20260821T074944Z` (bit-count trained on sampled
-probabilities) and `experiments/runs/flappy_shots/20260821T075321Z` (Flappy: margin-aware
+Runs `experiments/runs/bitcount_shots/20260821T084558Z` (bit-count trained on sampled
+probabilities) and `experiments/runs/flappy_shots/20260821T084601Z` (Flappy: margin-aware
 training, fixed-N vs sequential decisions).  Library: `ptqnn.backends.shots.ShotBackend`
 (finite-shot estimates with maximally-coupled common random numbers), `kwsa.minimise(probe_context=…)`,
 `flappy.agent.SPRTDecision`, `flappy.train.ObjectiveConfig(margin, margin_weight)`.
 
 | finding | number |
 |---|---|
-| KW–SA on sampled probabilities, paper schedule, 20 sweeps, exact KL of the final iterate (median of 3 seeds) | N=1000: 0.080 → **0.059** with CRN; N=4000: 0.050 → **0.014**; N=16000: 0.029 vs 0.033 (seed noise); exact-probability reference 0.0009 |
-| common random numbers: variance of the central difference | ÷2.9 at c = 0.2, ÷12–22 at c = 0.05 (the paper's c₀ = 0.2 decays only to 0.15 over 20 sweeps, so CRN helps least where the schedule spends its time) |
-| plug-in KL bias (K−1)/(2·P(out=1)·N) | 0.032 / 0.008 / 0.002 at N = 1000 / 4000 / 16000 — the sampled-training floor sits 1–3× above it; the *loss* is what limits, not the optimiser |
+| KW–SA on sampled probabilities, our reproduction schedule (the paper publishes none), 20 sweeps, exact KL of the final iterate (median of 3 seeds) | N=1000: 0.080 → **0.059** with CRN; N=4000: 0.050 → **0.014**; N=16000: 0.029 vs 0.033 (seed noise); exact-probability reference 0.0009 |
+| common random numbers: variance of the central difference | ÷2.9 at c = 0.2, ÷12–22 at c = 0.05 — the slope variance goes from O(1/(c²N)) to O(1/(cN)), a 1/c gain (our c₀ = 0.2 decays only to 0.15 over 20 sweeps, so CRN helps least where this schedule spends its time) |
+| plug-in KL bias (K−1)/(2·P(out=1)·N) | 0.032 / 0.008 / 0.002 at N = 1000 / 4000 / 16000 — the sampled-training floor sits 1–3× above it, *consistent with* the loss bias being the limit; with 3 seeds (one of which stalls at 0.014 even on exact probabilities) the experiment cannot separate optimiser failure from estimator bias (review 003 #4) |
 | Flappy, fixed N per frame (paper-style policy, 20 held-out games) | 2000: 70 % perfect; 4000: 85 %; 10000: 100 % |
 | Flappy, sequential test δ₀ = 0.01, cap 10 000 | **100 % perfect at 2 191 shots/frame** (÷4.6 vs fixed 10 000); δ₀ = 0.005, cap 4 000: 85 % at 2 916 (= fixed 4 000) |
 | sequential test with δ₀ ≥ median margin (0.02) | fails: 30 % perfect — the error bound α only holds for frames with margin > δ₀ |
@@ -95,10 +95,11 @@ indifference margin must sit below the margins that matter (p10 ≈ 0.004–0.00
 surface is smooth and the near-boundary frames are a property of the game's dynamics (the agent
 hovers at the boundary), so penalising them moves the boundary rather than steepening it, and a
 moved boundary is a less stable controller.  (3) Common random numbers are a real variance
-reduction for the paper's optimiser on a sampling backend, but the plug-in KL of a 32-bin
-histogram from ~N/2 usable shots is biased by (K−1)/(2·0.49·N), and that bias — not the gradient
-noise — sets what sampled training can reach; the next step is the joint-distribution loss or a
-bias-corrected estimator (items 4–5 of the programme, not done).
+reduction for the finite-difference optimiser on a sampling backend — variance, not bias: the
+plug-in KL of a 32-bin histogram from ~N/2 usable shots is biased by (K−1)/(2·0.49·N), the
+reached KL tracks 1–3× that bias, and the natural hypothesis is that the estimator, not the
+optimiser, now limits sampled training.  Testing it needs a bias-corrected or joint loss under
+paired initialisations and more seeds (items 4–5 of the programme, not done).
 
 ## Not run / pending
 * Noise-aware training at 11 qubits: measured at ≈1.3 h per (device, model) cell on orkan

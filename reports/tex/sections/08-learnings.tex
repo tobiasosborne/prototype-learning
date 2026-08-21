@@ -24,7 +24,8 @@ are.}  Every 7--11-qubit network survives every vendor's calibrated noise model 
 qualitatively intact result.  The Flappy controller needs $10^4$ shots per frame with a fixed
 budget; the bit-count loss is biased by $31.8/N$.  The one remedy that pays now is a sequential
 measurement rule ($4.6\times$ fewer shots, no retraining); margin-aware training does not work
-for a 17-parameter network; common random numbers help the optimiser but not the estimator.
+for a 17-parameter network; common random numbers reduce the optimiser's noise by $1/c$ but
+leave the estimator's bias, which is the likely (untested) limit of sampled training.
 
 \item \textbf{Compiled circuits are $5$--$15\times$ more noise-sensitive than logical ones.}
 Two native gates per controlled rotation, resynthesised single-qubit gates and routing on a

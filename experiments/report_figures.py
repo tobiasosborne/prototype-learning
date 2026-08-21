@@ -41,10 +41,10 @@ OUT = ROOT / "reports/tex/figures"
 RUNS = {
     "bitcount": ROOT / "experiments/runs/bitcount/20260820T135930Z",
     "bitcount_noise": ROOT / "experiments/runs/bitcount_noise/20260820T145335Z",
-    "bitcount_shots": ROOT / "experiments/runs/bitcount_shots/20260821T074944Z",
+    "bitcount_shots": ROOT / "experiments/runs/bitcount_shots/20260821T084558Z",
     "flappy": ROOT / "experiments/runs/flappy/20260820T143753Z",
     "flappy_noise": ROOT / "experiments/runs/flappy_noise/20260820T154249Z",
-    "flappy_shots": ROOT / "experiments/runs/flappy_shots/20260821T075321Z",
+    "flappy_shots": ROOT / "experiments/runs/flappy_shots/20260821T084601Z",
     "ecg": ROOT / "experiments/runs/ecg/20260820T162014",
     "ecg_physionet": ROOT / "experiments/runs/ecg/20260820T165912",
     "iris": [
@@ -53,7 +53,7 @@ RUNS = {
         ROOT / "experiments/runs/iris/20260820T145455Z",
     ],
     "ecg_iris_noise": ROOT / "experiments/runs/ecg_iris_noise/20260820T155618Z",
-    "hardware_plan": ROOT / "experiments/runs/hardware-plan/20260821T073211Z",
+    "hardware_plan": ROOT / "experiments/runs/hardware-plan/20260821T084554Z",
 }
 
 # --- style --------------------------------------------------------------------------------------

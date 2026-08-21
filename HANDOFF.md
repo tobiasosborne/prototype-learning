@@ -1,60 +1,37 @@
 # HANDOFF
 
-End of session 1 (2026-08-20). Read STATE.md, then reviews/002-tasks-backends-hardware.md
-"Resolution" — the open items there are the work queue, in this order:
+End of session 2 (2026-08-21). Read STATE.md first. The deliverable is `reports/tex/main.pdf`
+(build: `cd reports/tex && latexmk -pdf main.tex`; figures: `experiments/report_figures.py`).
 
-1. Regenerate the numbers in reports/hardware-plan.md from the run data (blocker 1).
-2. Promote the tasks' batched statevector evaluators into `backends/` (review 002 #7); then
-   wire `restate_incumbent` into Flappy seed rotation (#8) and fix the Iris bin-count wording (#9).
-3. Run the 11-qubit noise-aware bit-count training (≈1.3 h per cell on orkan @8 threads, or on
-   the GPU now that it is fixed — re-measure; the script has progress.log and partial results):
-   `experiments/bitcount_noise.py --studies B --b-network full`.
-4. Integrate the Flappy-noise and ECG/Iris-noise results into reports/noise.md (run dirs under
-   experiments/runs/flappy_noise, experiments/runs/ecg_iris_noise).
-5. Review round 3 over the hardware fixes and the noise scripts.
+## Work queue, in order
 
-Gates: `sh scripts/check-all.sh` (set LD_LIBRARY_PATH=/usr/lib/wsl/lib for GPU tests; `-m orkan`
-takes minutes). Subagents: Opus/Sonnet only; Codex via docs/codex.md.
+1. **Review round 3.** `reviews/003-session2.md` holds the Codex (gpt-5.6-sol, xhigh) adversarial
+   review of the session-2 diff (`git diff 7271620..HEAD`). Apply or explicitly decline each
+   finding in a "Resolution" table at the bottom, re-run `sh scripts/check-all.sh`, and update
+   the tex report if a number changes (the report quotes run dirs only — regenerate, do not edit).
+2. **Shot-noise programme item 4** (the one that now limits sampled training): a loss that uses
+   all shots — train on the joint P(x, out) with target (popcount+1)/112 · P(out=1), or one
+   amplitude-amplification step on the `out=1` branch. Where: `train/distribution.py`
+   (joint variant), `circuits/` (amplification op). Measure with `experiments/bitcount_shots.py`
+   (add a `--loss joint` flag); the plug-in bias (K−1)/(2·P(out=1)·N) is the number to beat.
+3. **Item 5**: Miller–Madow / Dirichlet-smoothed KL, or the paper's cosine loss (Eq 5) with an
+   unbiased estimator, in `train/losses.py`; same harness.
+4. **Item 6** (hardware appendix only): iterative/ML amplitude estimation of P(out=1) —
+   `hardware/qae.py`, simulate on the statevector backend first.
+5. Optional, budget permitting (each ≤ 1 h): one cell of 11-q noise-aware bit-count training
+   (`experiments/bitcount_noise.py --studies B --b-network full`, ibm_fez, prototype, 10 sweeps,
+   GPU ≈ 30 min); a fuller ECG noise block (`experiments/ecg_iris_noise.py`, 100 windows,
+   2 presets ≈ 15 min). Ask before anything longer.
 
-## Shot-noise programme (from the session-1 discussion; not yet implemented)
+## Rules that bit us this session
+* No run > 1–2 h; estimate from a measured per-eval cost first and print it (`flush=True`).
+* Penalties in a shaped objective must be priced below the per-frame reward (the mean-hinge
+  attempt produced a confidently dead Flappy policy).
+* Non-stationary objectives need `KWSAConfig.restate_incumbent=True` (now automatic for
+  `flappy.train(batch>0)`).
+* Common random numbers for finite differences need the *maximal coupling*
+  (`backends/shots.py`), not shared inverse-CDF uniforms (1.3× only).
+* Every hardware number goes through `experiments/hardware_plan.py`; never hand-edit the report.
 
-Context: the noise studies (`reports/noise.md`) show gate noise at calibrated vendor levels is
-tolerated by the 7–11-qubit networks, but *shot noise* is the binding constraint — Flappy needs
-≥ 10⁴ shots/frame with the plain binomial estimator because the trained decision margin
-δ = |P(out=1) − ½| has median 0.02 (σ = 1/(2√N)); bit-count's plug-in KL is biased by
-(K−1)/(2N·P(out=1)) and discards the `out = 0` half of the shots.  Both figures are ceilings
-for the naive estimator, not requirements.  Ideas, roughly in order of payoff / cost:
-
-1. **Margin-aware training (cheapest, do first).**  Add a hinge term to the Flappy objective
-   (and the ECG/Iris activation objectives): penalise visited states with |P(out=1) − ½| < m,
-   m ≈ 0.1.  Costs nothing noiselessly; shots scale as 1/δ², so 0.02 → 0.1 is ×25 fewer.
-   Where: `tasks/flappy/train.py` objective; report margin quantiles as in
-   `experiments/flappy_noise.py`.
-2. **Common random numbers for KW–SA on sampled backends.**  Evaluate the ±c probes of each
-   coordinate with the *same* shot seed (on hardware: interleave the ± circuits in one job).
-   The finite-difference variance drops from O(1/N) to O(c²/N).  Two-line change: a
-   `ShotBackend(inner, shots, seed)` that samples `reference.sample_counts` and a seed shared
-   per probe pair in `kwsa.kw_gradient` / the coordinate loop.  This is what makes
-   finite-difference optimisation usable on a sampling backend at all.
-3. **Sequential testing for decisions (Flappy).**  Replace fixed-N binomial with a sequential
-   probability ratio test on the sign of P − ½: far-from-boundary states resolve in tens of
-   shots, only the ~10 % near-boundary frames pay the full budget.  Expected 5–20× on mean
-   shots/frame.  Where: `tasks/flappy/agent.py` `act()` with a `ShotPolicy`.
-4. **Do not discard shots (bit-count / Iris).**  Either train on the joint P(x, out) with
-   target (popcount+1)/112 · P(out=1) (normaliser from all shots), or apply one Grover/amplitude
-   amplification step on the `out = 1` branch (≈ doubles the usable fraction; +1 circuit depth).
-   Where: `train/distribution.py` (joint variant), `circuits/` (amplification op).
-5. **Better divergence estimators.**  Miller–Madow or Dirichlet-smoothed KL; or switch the
-   training loss to a bounded proxy with unbiased finite-sample estimators — the paper's own
-   cosine dissimilarity (Eq 5) or total variation.  Where: `train/losses.py`; quantify bias vs
-   shots with the existing study-D harness in `experiments/bitcount_noise.py`.
-6. **Amplitude estimation.**  P(out=1) is an amplitude² of a unitary circuit → iterative /
-   maximum-likelihood QAE gives error ∝ 1/N_oracle (Heisenberg) instead of 1/√N: δ = 0.02 needs
-   ~50 oracle calls × small constant instead of 2500 shots.  Cost: 2–6 repetitions of the
-   circuit in depth — fine on all-to-all trapped ions, not on heavy-hex.  Where: new
-   `hardware/qae.py`; simulate first with the statevector backend.
-7. Classical shadows are not useful here (single-qubit Z observable).
-
-Suggested order: (1) + (2) → rerun `experiments/flappy_noise.py` study C and a sampled-backend
-bit-count training; then (3), (4); (5) as a side study; (6) only for the hardware-plan appendix.
-Deliverable: a "shots" section in `reports/noise.md` with shots-to-target curves before/after.
+Gates: `LD_LIBRARY_PATH=/usr/lib/wsl/lib sh scripts/check-all.sh` (green at session close).
+Subagents: Codex only this session (`docs/codex.md`); no Claude subagents were used.

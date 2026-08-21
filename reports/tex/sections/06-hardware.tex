@@ -2,7 +2,7 @@
 \label{sec:hardware}
 
 All numbers in this section are printed by \code{experiments/hardware\_plan.py} into the run
-directory \runpath{hardware-plan/20260821T073211Z} (file \code{numbers.md}); the script joins
+directory \runpath{hardware-plan/20260821T084554Z} (file \code{numbers.md}); the script joins
 every calibration number it uses to its provenance entry and refuses to run if one is missing.
 
 \subsection{Compilation: the prototype network is the worst case for a lattice}
@@ -25,7 +25,7 @@ gates take a millisecond.
 \includegraphics[width=\textwidth]{fig_hardware_entanglers}
 \caption{Native two-qubit gates after compiling each network for each machine (our router;
 log scale).  The all-to-all machines need only the network's own gates; the lattices spend most
-of their budget on routing.  Run \run{hardware-plan/20260821T073211Z}.}
+of their budget on routing.  Run \run{hardware-plan/20260821T084554Z}.}
 \label{fig:entanglers}
 \end{figure}
 
@@ -35,11 +35,15 @@ of their budget on routing.  Run \run{hardware-plan/20260821T073211Z}.}
 \Cref{fig:fidelity} stacks the four factors of \cref{eq:fidelity} for the two smallest
 circuits, with the exactly simulated total-variation distance between the compiled circuit run
 clean and run under the machine's noise model next to each bar.  Flappy at 7 qubits is a
-high-fidelity circuit on the trapped-ion machines ($F\approx 0.92$ on H2-1, $0.81$ on Forte),
-marginal on Willow and Fez ($0.6$, $0.4$ with our router, $0.72$ with IBM's compiler), and poor on
-Garnet ($0.18$).  Bit-count at 11 qubits is feasible on H-series ($0.81$) and Forte ($0.61$),
-usable with IBM's compiler on Fez ($0.43$), and dead on Garnet ($0.004$), whose routed circuit
-lasts $86\,\%$ of its $T_2$.  Two cautions.  The simulated distances of the \emph{compiled}
+high-fidelity circuit on the trapped-ion machines ($F\approx 0.92$ on H2-1, $0.83$ on Forte),
+marginal on Willow and Fez ($0.63$; $0.46$ with our router, $0.75$ with IBM's compiler), and poor
+on Garnet ($0.24$).  Bit-count at 11 qubits is feasible on H-series ($0.81$) and Forte ($0.64$),
+usable with IBM's compiler on Fez ($0.48$), and dead on Garnet ($0.008$), whose routed circuit
+lasts $86\,\%$ of its $T_2$.  Idling is charged only over each qubit's gaps in the schedule (relaxation during a gate is
+already inside the vendor's gate error); the older variant that charged the whole circuit
+duration on every qubit was $10$--$15$ points more pessimistic on the superconducting machines
+and is printed beside it in the run directory.  Two cautions.  The simulated distances of the
+\emph{compiled}
 circuits ($0.03$ on H-series, $0.16$ on Forte, $0.43$ on Fez) are $5$--$15\times$ larger than
 those of the uncompiled circuits in \cref{sec:noise-bitcount}: two native gates per controlled
 rotation, resynthesised one-qubit gates and routing all cost.  And the vendors' two-qubit errors
@@ -116,8 +120,13 @@ noise model first), then on IonQ Forte for the confirmation (\$1\,300 for a $4\t
 $1\,000$ shots), and on Quantinuum H2-1 for the headline number if an allocation exists.  The
 bit-count histogram is feasible on H-series and Forte as a \emph{shape} demonstration but not as
 a KL comparison (device error puts the KL floor at $10^{-2}$--$10^{-1}$, two orders above the
-simulated $5.5\times10^{-4}$).  Iris is out of reach: loading the dataset state needs thousands
-of two-qubit gates ($8\,166$ dense, $\approx 1\,440$ exploiting sparsity \cite{sbm,plesch,gleinig}),
-giving a best-case fidelity near $0.2$ before the network runs.  Four things the code still
+simulated $5.5\times10^{-4}$).  Whether Iris is within reach cannot be settled yet: what our runs
+prepare is a uniform superposition over the $12$--$14$ \emph{distinct} training codes (not the
+$120$ samples an earlier draft assumed), and the sparse construction of \cite{gleinig} has
+leading term $k\cdot n = 144$--$168$ two-qubit gates, a fidelity of $\approx 0.83$ on H2-1 and
+$\approx 0.75$ with the network --- but its constant is unknown, and the dense alternatives
+($8\,168$ gates \cite{sbm}, $\approx 3\,925$ \cite{plesch}) are hopeless.  An exact answer needs
+an actual sparse state-preparation circuit, which this repository does not build.  Four things
+the code still
 lacks for a live submission are listed in the repository's hardware plan (credentials, the
 vendors' own routing, asynchronous job handles, readout-unfolding and folding utilities).

@@ -2,7 +2,7 @@
 
 Status: v2, 2026-08-21 (PLAN.md §1 item 4, phase P10; v1's numbers were found wrong in
 review 002 blocker 1 and are regenerated here).  **Every number in this report is printed by
-`experiments/hardware_plan.py` into `experiments/runs/hardware-plan/20260821T073211Z/numbers.md`** (meta.json: git hash, seed 17,
+`experiments/hardware_plan.py` into `experiments/runs/hardware-plan/20260821T084554Z/numbers.md`** (meta.json: git hash, seed 17,
 CuPy density-matrix backend, 118 s); the prose quotes that file and nothing else.
 Calibration numbers come from `src/ptqnn/noise/devices/*.toml` (retrieved 2026-08-20,
 per-field provenance with verbatim quotes; `devices/README.md` lists what is sourced and what is
@@ -138,31 +138,31 @@ density matrix without and with `DeviceSpec.noise_model()`, averaged over five o
 (grid corners and centre); the Quantinuum presets carry no T1/T2, so their simulated TVD
 contains no idle error at all — `F(idle)` charges it separately from the memory-error figure.
 
-| device | F(2q) | F(1q) | F(idle) | F(readout) | **F** | simulator TVD |
-|---|---:|---:|---:|---:|---:|---:|
-| Quantinuum H2-1 | `0.9989^24 = 0.9739` | `0.999981^87 = 0.9983` | `(1−2.0e-4)^(7·36) = 0.9508` | `0.999^7 = 0.9930` | **0.918** | 0.022 |
-| Quantinuum H1-1 | `0.99903^24 = 0.9770` | `0.999982^87 = 0.9984` | `(1−2.2e-4)^(7·36) = 0.9461` | `0.9977^7 = 0.9840` | **0.908** | 0.025 |
-| IonQ Forte | `0.996^24 = 0.9083` | `0.9998^204 = 0.9600` | `t = 17.9 ms`, `T2 = 1 s` → 0.9590 | `0.995^7 = 0.9655` | **0.807** | 0.120 |
-| Google Willow (sim only) | `0.9959^63 = 0.772` | `0.99947^107 = 0.9449` | `t = 3.18 µs` → 0.8723 | `0.992^7 = 0.9453` | **0.601** | 0.255 |
-| ibm_fez (SABRE O2, §3.2) | `0.99610^37 = 0.8653` | `0.999771^100 = 0.9774` | `t = 3.17 µs` → 0.8971 | `0.99233^7 = 0.9474` | **0.719** | — |
-| ibm_fez (our greedy router) | `0.99610^90 = 0.7033` | `0.999771^553 = 0.8808` | `t = 11.3 µs` → 0.6840 | 0.9474 | **0.401** | 0.387 |
-| IQM Garnet | `0.9951^63 = 0.7338` | `0.9992^282 = 0.7980` | `t = 6.8 µs`, `T2ₑ = 21 µs` → 0.3824 | `0.97^7 = 0.8080` | **0.181** | 0.552 |
-| Rigetti Ankaa-3 | `0.99^63 = 0.5309` | no 1q error published | no T1/T2 published | no readout published | **≤ 0.53** | 0.301† |
+| device | F(2q) | F(1q) | F(idle, gaps) | F(idle, full path) | F(readout) | **F** | simulator TVD |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Quantinuum H2-1 | 0.9739 | 0.9983 | 0.9508 | — | 0.9930 | **0.918** | 0.0216 |
+| Quantinuum H1-1 | 0.9770 | 0.9984 | 0.9461 | — | 0.9840 | **0.908** | 0.0247 |
+| IonQ Forte | 0.9083 | 0.9600 | 0.9823 | 0.9590 | 0.9655 | **0.827** | 0.1201 |
+| Google Willow (sim only) | 0.7720 | 0.9449 | 0.9157 | 0.8723 | 0.9453 | **0.631** | 0.2553 |
+| ibm_fez (SABRE O2, §3.2) | 0.8653 | 0.9774 | 0.9356 | 0.8971 | 0.9474 | **0.750** | — |
+| ibm_fez (our greedy router) | 0.7033 | 0.8808 | 0.7821 | 0.6840 | 0.9474 | **0.459** | 0.3868 |
+| IQM Garnet | 0.7338 | 0.7980 | 0.5113 | 0.3824 | 0.8080 | **0.242** | 0.5517 |
+| Rigetti Ankaa-3 | 0.5309 | — | — | — | — | **0.531** (bound) | 0.3007† |
 
 **bit-count, 11 q:**
 
-| device | F(2q) | F(1q) | F(idle) | F(readout) | **F** | simulator TVD |
-|---|---:|---:|---:|---:|---:|---:|
-| Quantinuum H2-1 | `0.9989^60 = 0.9361` | 0.9958 | `(1−2.0e-4)^(11·60) = 0.8763` | `0.999^11 = 0.9891` | **0.808** | 0.032 |
-| Quantinuum H1-1 | `0.99903^60 = 0.9434` | 0.9960 | 0.8648 | 0.9750 | **0.792** | 0.034 |
-| IonQ Forte | `0.996^60 = 0.7862` | `0.9998^504 = 0.9059` | `t = 29.7 ms` → 0.8970 | 0.9464 | **0.605** | 0.158 |
-| Google Willow (sim only) | `0.9959^207 = 0.4272` | 0.8666 | `t = 7.4 µs` → 0.6102 | 0.9154 | **0.207** | 0.344 |
-| ibm_fez (SABRE O2) | `0.99610^97 = 0.6843` | `0.999771^275 = 0.9390` | `t = 6.07 µs` → 0.7228 | 0.9186 | **0.427** | — |
-| ibm_fez (greedy) | `0.99610^327 = 0.2783` | 0.6329 | `t = 26.2 µs` → 0.2654 | 0.9186 | **0.043** | 0.434 |
-| IQM Garnet | `0.9951^207 = 0.3618` | 0.4535 | `t = 18.1 µs ≈ 0.86·T2ₑ` → 0.030 | 0.7153 | **0.004** | 0.579 |
-| Rigetti Ankaa-3 | `0.99^207 = 0.1249` | — | — | — | **≤ 0.12** | 0.345† |
+| device | F(2q) | F(1q) | F(idle, gaps) | F(idle, full path) | F(readout) | **F** | simulator TVD |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Quantinuum H2-1 | 0.9361 | 0.9958 | 0.8763 | — | 0.9891 | **0.808** | 0.0316 |
+| Quantinuum H1-1 | 0.9434 | 0.9960 | 0.8648 | — | 0.9750 | **0.792** | 0.0344 |
+| IonQ Forte | 0.7862 | 0.9059 | 0.9516 | 0.8970 | 0.9464 | **0.641** | 0.1582 |
+| Google Willow (sim only) | 0.4272 | 0.8666 | 0.7046 | 0.6102 | 0.9154 | **0.239** | 0.3439 |
+| ibm_fez (SABRE O2, §3.2) | 0.6843 | 0.9390 | 0.8072 | 0.7228 | 0.9186 | **0.476** | — |
+| ibm_fez (our greedy router) | 0.2783 | 0.6329 | 0.4190 | 0.2654 | 0.9186 | **0.068** | 0.4343 |
+| IQM Garnet | 0.3618 | 0.4535 | 0.0658 | 0.0299 | 0.7153 | **0.008** | 0.5785 |
+| Rigetti Ankaa-3 | 0.1249 | — | — | — | — | **0.125** (bound) | 0.3452† |
 
-`F(readout)` uses the mean of the two published flip probabilities, `(1 − (p01+p10)/2)^n`.
+`F(readout)` uses the mean of the two published flip probabilities, `(1 − (p01+p10)/2)^n`.  `F(idle, gaps)` charges relaxation over each qubit's idle gaps of the ASAP schedule (the vendor's gate error already contains relaxation during gates) and is the value folded into **F**; `F(idle, full path)` is the older variant that charged the whole circuit duration on every qubit — pessimistic, kept for comparison (review 003 #5).
 † Rigetti's simulated TVD is an *underestimate*: its preset carries only the iSWAP error — no
 1q, no readout, no T1/T2.  For comparison, the *logical* (uncompiled) bit-count circuit under the
 same presets moves by TVD 0.005–0.039 only (`reports/noise.md`; `numbers.md` §noise_run): the
@@ -207,10 +207,10 @@ lattice.  Routing overhead, not gate error, dominates — `n_2q = 2·n_CRX + 3·
 heavy-hex 73 % of the entanglers are SWAP (62 % on the square lattices).  Staged:
 
 1. **IBM Open plan, free, today.**  7 q fits; qiskit gets it to 37 CZ / depth 98 (§3.2) ⇒
-   F ≈ 0.72.  Zero cost, so this is where the M3 + ZNE pipeline gets debugged.  Deliverable:
+   F ≈ 0.75.  Zero cost, so this is where the M3 + ZNE pipeline gets debugged.  Deliverable:
    `P(out=1)` on a 4×4 observation grid at 4 000 shots (16 jobs, ~1 s QPU total).
 2. **IonQ Forte via Braket, ≈ $1 285** for the same grid at 1 000 shots (16 × ($0.30 + $80)).
-   F ≈ 0.81, no SWAPs, no layout risk — the *confirmation* run.
+   F ≈ 0.83, no SWAPs, no layout risk — the *confirmation* run.
 3. **Quantinuum H2-1: best number, worst price.**  F ≈ 0.92 on the second-lowest 2q error of
    any preset (1.1e-3; H1-1's 9.7e-4 is lower, but its SPAM error is 2.3e-3 vs H2-1's 1.0e-3,
    which is why H2-1 wins the product), but ≈ 323 HQC for one 4 000-shot job — worth it for the headline figure
@@ -231,7 +231,7 @@ qiskit's own transpiler, via `IBMRuntimeExecutor.dry_run_payload` (heavy-hex pat
 | bit-count 11 q | 327 CZ, depth 676 | 129 CZ, d217 | **97 CZ, d184** | 107 CZ, d180 |
 
 SABRE + VF2 layout + 1q resynthesis buys **2.4× fewer entanglers on Flappy, 3.4× on bit-count**
-and 3–3.7× shallower circuits — in fidelity, 0.40 → **0.72** and 0.043 → **0.427** (F from the
+and 3–3.7× shallower circuits — in fidelity, 0.46 → **0.75** and 0.068 → **0.476** (F from the
 ISA circuit's own gate counts and a critical path walked with ibm_fez's durations, `numbers.md`
 §sabre), the
 difference between "unusable" and "usable with mitigation".  **A real IBM submission must go
@@ -240,7 +240,7 @@ router**, which stays the honest device-independent comparison instrument it was
 (`IBMRuntimeExecutor` already does the right thing).  O3 is *worse* than O2 on bit-count — check
 both per circuit; O3's extra 1q merging does not pay when the 1q error is 17× below the 2q one.
 
-So bit-count 11 q **is feasible on Heron** at F ≈ 0.43: enough for a qualitative histogram (the
+So bit-count 11 q **is feasible on Heron** at F ≈ 0.48: enough for a qualitative histogram (the
 32 bars span 6×, 0.0089…0.0536) but not for a KL comparison — device error alone puts the KL
 floor at 10⁻²–10⁻¹, two orders above our simulated 5.5e-4.  Run it as a *shape* demonstration.
 
@@ -248,12 +248,16 @@ floor at 10⁻²–10⁻¹, two orders above our simulated 5.5e-4.  Run it as a 
 
 The network alone is 17 q / 104 entanglers on H2 — fine.  The input is not: `[PTQNN §III.C]`
 prepares *the whole dataset* as a superposition over 12 qubits, an arbitrary 2¹² = 4096-amplitude
-state.  Dense amplitude encoding costs `2^{n+1} − 2n − 2 = 8 166` CNOTs (Shende–Bullock–Markov) or
-`≈ 23/24·2^n = 3 925` (Plesch–Brukner); at H2-1's 1.1e-3 that is `0.9989^8166 ≈ 1e-4` resp.
-`0.9989^3925 ≈ 0.013`.  Exploiting sparsity (the 120 training points carry amplitude) gives
-`O(k·n)`; the leading term `k·n = 1 440` CNOTs alone is `0.9989^1440 ≈ 0.21`, before the
-network's 104 and before the implementation constant.  **Best case ≈ 0.2 fidelity, on the best
-machine available, with a state-preparation compiler we have not written** (`qasm.to_openqasm3` refuses circuits with an `initial_state`).  Iris stays a
+state.  Dense amplitude encoding costs `2^{n+1} − 2n = 8 168` CNOTs (Shende–Bullock–Markov) or
+`≈ 23/24·2^n = 3 925` (Plesch–Brukner); at H2-1's 1.1e-3 that is `0.9989^8168 ≈ 1e-4` resp.
+`0.9989^3925 ≈ 0.013`.  What our Iris runs actually prepare is much sparser: a uniform
+superposition over the *distinct* training codes — 14 / 12 / 14 in the three recorded runs, not
+120 samples (review 003 blocker 1 caught an earlier 9× over-count).  Gleinig–Hoefler's sparse
+construction is `O(k·n)`; its leading term `k·n = 144–168` CNOTs gives `0.9989^168 ≈ 0.83`, and
+`≈ 0.74–0.76` with the network's 104 entanglers — but the implementation constant is unknown, so
+this is an order of magnitude, not a bound in either direction.  **Whether Iris is within reach
+cannot be settled until an actual sparse state-preparation circuit supplies an exact count; this
+repository does not build one (`qasm.to_openqasm3` refuses circuits with an `initial_state`).** (`qasm.to_openqasm3` refuses circuits with an `initial_state`).  Iris stays a
 simulator experiment; the paper itself concedes state preparation of a dataset "can be a huge
 effort".
 
@@ -287,9 +291,11 @@ effort".
    $29 000 on Forte, $520 on Garnet, ~free on IBM Open.  KW tolerates shot noise provided the
    difference step `c_n` stays above it: with `σ_p ≈ 1/(2√N)` the finite-difference SNR is
    `~ c_n·|∂p/∂θ|·2√N`, so `c_0 = 0.2` (`bitcount.SUPERPOSITION_CONFIG`) and `N = 4 000` give
-   SNR ≈ 25 at a typical `|∂p/∂θ| ≈ 0.5`.  A *static* device bias cancels in the central
-   difference and costs nothing; *drift between the two legs* does not — hence one job per pair
-   (§6).
+   `c·|∂p/∂θ|·2√N = 0.2·0.5·2·63 ≈ 12.7` at a typical `|∂p/∂θ| ≈ 0.5` (≈ 18 for the difference of
+   two independent probes; review 003 #8 corrected an earlier 25).  Only a parameter-independent
+   *additive* offset cancels in the central difference; a static bit-flip-like channel rescales
+   the derivative by `(1 − 2e)` and biases it.  *Drift between the two legs* is worse still —
+   hence one job per pair (§6).
 
 ---
 
@@ -339,7 +345,7 @@ degree-3 lattice — and the single largest lever on any superconducting device,
 fSim gate, not the universal iSWAP (99.0 %) we would use — a 2× optimism trap.  Our routed
 bit-count critical path on Garnet (18.1 µs, with the 40 ns 1q `[ASSUMPTION]`) is 86 % of its
 T2-echo (21 µs) and twice its T2-Ramsey (8.5 µs), so the 11 q circuit is dead there
-(F ≈ 0.004, simulated TVD 0.58); even Flappy's 6.8 µs is a third of T2-echo (F ≈ 0.18).  Neither is a
+(F ≈ 0.008, simulated TVD 0.58); even Flappy's 6.8 µs is a third of T2-echo (F ≈ 0.24).  Neither is a
 candidate.
 
 **What the simulator predicts.**  `reports/noise.md` (run
@@ -363,7 +369,7 @@ from — source URL, source kind (vendor calibration page, vendor paper, third-p
 snapshot), retrieval date and a verbatim quote.  `experiments/hardware_plan.py` joins those
 entries to every field it reads and **refuses to write a run** if any field lacks one
 (`tests/test_hardware_plan_script.py::test_every_calibration_number_used_has_a_provenance_entry`);
-the full per-field table (≈60 rows, with quotes) is `experiments/runs/hardware-plan/20260821T073211Z/numbers.md` §provenance.  What is
+the full per-field table (≈60 rows, with quotes) is `experiments/runs/hardware-plan/20260821T084554Z/numbers.md` §provenance.  What is
 *not* vendor-published and enters as an `[ASSUMPTION]`:
 
 | id | assumption | affects |

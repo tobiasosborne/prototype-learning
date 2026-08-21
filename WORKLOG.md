@@ -6,4 +6,4 @@ shard when the current one exceeds ~500 lines. Never renumber sessions. Format: 
 
 | Sessions | File | Dates | Topics |
 |---|---|---|---|
-| 1– | `worklog/sessions-001-to-010.md` | 2026-08-20– | Project start: paper + figure extraction, orkan/Sturm/QuantumHardware surveys, PLAN.md, uv scaffold, CLAUDE.md, reference simulator (P0–P1). |
+| 1–2 | `worklog/sessions-001-to-010.md` | 2026-08-20–21 | S1: paper extraction, plan, scaffold, all four reproductions, noise library, hardware layer. S2: review-002 queue, provenanced hardware plan, batched kernel, shot-noise programme (CRN, SPRT, margins), LaTeX report, Codex review 3. |

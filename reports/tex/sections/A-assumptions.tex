@@ -39,9 +39,13 @@ probabilities; readout factor $(1-(p_{01}+p_{10})/2)^n$.
 a secondary \$96/min report) plus 30\,s per-job overhead; Quantinuum \$12.5 per credit (Azure
 Standard plan divided by its allotment); Braket and Azure per-shot prices as retrieved on
 20 August 2026; Quantinuum's credit formula with $N_m = 2\times$ qubits.
-\item[State preparation (\cref{sec:recommendation}).]  Dense counts $2^{n+1}-2n-2$ \cite{sbm} and
-$\approx\tfrac{23}{24}2^n$ \cite{plesch}; sparse leading term $k\cdot n$ with $k=120$ training
-flowers \cite{gleinig}.
+\item[State preparation (\cref{sec:recommendation}).]  Dense counts $2^{n+1}-2n$ \cite{sbm} and
+$\approx\tfrac{23}{24}2^n$ \cite{plesch}; sparse \emph{leading term} $k\cdot n$ of an $O(k n)$
+construction \cite{gleinig} with $k$ the $12$--$14$ distinct training codes actually prepared
+(constant unknown).
+\item[Compilation.]  Lattice machines are compiled onto a synthetic heavy-hex or square patch of
+the circuit's size with our greedy router; Google's and Rigetti's gate sets are rebased through a
+generic fallback.  Idle relaxation is charged over each qubit's schedule gaps only.
 \item[Shot-noise programme (\cref{sec:shots}).]  Margin penalty $w\cdot 0.01\cdot\max(0,1-\delta/m)$
 per frame with $m=0.1$; sequential test with $\alpha=\beta=0.05$, blocks of 20 shots; common
 random numbers by maximal coupling to the first probe of each coordinate.
