@@ -56,6 +56,7 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import numpy.typing as npt
 
+from ptqnn.backends import batched
 from ptqnn.backends import reference as ref
 from ptqnn.backends.base import Backend
 from ptqnn.circuits import ir
@@ -107,43 +108,9 @@ def target_distribution(codes: Codes, labels: npt.ArrayLike, n_bits: int = N_BIT
 # one ``CRX(w_j)`` per hidden qubit.  All of these act on the *same* qubit and are diagonal in
 # the hidden basis, so for a hidden configuration ``h`` the output sees a single rotation by
 # ``b + Σ_j h_j w_j`` and ``P(out = 1 | x, h) = sin²((b + Σ_j h_j w_j)/2)``.  Simulating the
-# output qubit is therefore unnecessary: we evolve the ``n_in + n_hid`` qubit register and
-# contract.  ``test_fast_evaluator_agrees_with_the_reference_backend`` pins this to the oracle.
-
-
-def _apply_2x2(view: Complex, axis: int, m: Complex) -> None:
-    """In-place ``view ← (m ⊗ I) view`` along a length-2 ``axis``."""
-    i0: list[slice | int] = [slice(None)] * view.ndim
-    i1: list[slice | int] = [slice(None)] * view.ndim
-    i0[axis], i1[axis] = 0, 1
-    t0, t1 = tuple(i0), tuple(i1)
-    a = view[t0].copy()
-    b = view[t1]
-    view[t0] = m[0, 0] * a + m[0, 1] * b
-    view[t1] = m[1, 0] * a + m[1, 1] * b
-
-
-def _apply_gate(psi: Complex, n: int, gate: ir.Gate) -> None:
-    """In-place application of an ``rx`` or ``crx`` gate to a contiguous statevector."""
-    if gate.name == "rx":
-        (q,) = gate.qubits
-        theta = gate.params[0]
-        c, s = np.cos(theta / 2), np.sin(theta / 2)
-        m = np.array([[c, -1j * s], [-1j * s, c]], dtype=np.complex128)
-        _apply_2x2(psi.reshape(1 << q, 2, 1 << (n - q - 1)), 1, m)
-        return
-    if gate.name != "crx":
-        raise ValueError(f"fast evaluator only knows rx/crx, got {gate.name!r}")
-    ctrl, tgt = gate.qubits
-    theta = gate.params[0]
-    c, s = np.cos(theta / 2), np.sin(theta / 2)
-    m = np.array([[c, -1j * s], [-1j * s, c]], dtype=np.complex128)
-    lo, hi = (ctrl, tgt) if ctrl < tgt else (tgt, ctrl)
-    block = psi.reshape(1 << lo, 2, 1 << (hi - lo - 1), 2, 1 << (n - hi - 1))
-    if ctrl < tgt:
-        _apply_2x2(block[:, 1], 2, m)  # control = 1 branch; target is the second split axis
-    else:
-        _apply_2x2(block[:, :, :, 1], 1, m)
+# output qubit is therefore unnecessary: we evolve the ``n_in + n_hid`` qubit register with the
+# shared kernel :mod:`ptqnn.backends.batched` and contract.
+# ``test_fast_evaluator_agrees_with_the_reference_backend`` pins this to the oracle.
 
 
 def _hidden_ops(net: Network, params: npt.ArrayLike) -> list[ir.Gate]:
@@ -182,10 +149,10 @@ def fast_joint(net: Network, params: npt.ArrayLike, psi0: Complex) -> Real:
     if not np.allclose(psi_full[:, 1], 0.0):
         raise ValueError("fast evaluator requires the output qubit prepared in |0⟩")
     n = net.n_inputs + net.n_hidden
-    psi = np.ascontiguousarray(psi_full[:, 0])
+    psi = psi_full[:, 0].reshape(1, -1)
     for gate in _hidden_ops(net, params):
-        _apply_gate(psi, n, gate)
-    p = (np.abs(psi) ** 2).reshape(2**net.n_inputs, 2**net.n_hidden)
+        psi = batched.apply_gate_batched(psi, gate, n)
+    p = (np.abs(psi[0]) ** 2).reshape(2**net.n_inputs, 2**net.n_hidden)
     return np.asarray(p @ output_activation_table(net, params), dtype=np.float64)
 
 

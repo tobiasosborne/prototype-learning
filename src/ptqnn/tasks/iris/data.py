@@ -17,10 +17,11 @@ sample is ``Σ_j b_j 2^(11-j)`` and qubit 0 carries "feature 0, cluster 0".
 Choices the papers do not fix (``PLAN.md §0``):
 
 * ``[ASSUMPTION]`` train/test ratio.  Neither paper states it.  We use a stratified 1/3 train,
-  2/3 test split: ``[PTQNN Fig 8]`` shows 15 histogram bins for the training set and 30 for the
-  test set, i.e. a test set roughly twice the size of the training set; a 50-sample training
-  split gives 12–17 distinct codes, matching the 15 bins of Fig 8 (top).  ``[SNN Table I]``
-  reports 95 % ± 5 on Iris with an unstated split.
+  2/3 test split.  ``[PTQNN Fig 8]`` shows 15 non-empty histogram bins for the training set and
+  30 for the test set; our 50-sample training splits give 12–14 distinct codes (near the 15) but
+  the 100-sample test splits give only 18–20 (not 30), so Fig 8 supports the *direction* of the
+  split, not the ratio (review 002 #9; counts in the Iris run ``meta.json`` files).
+  ``[SNN Table I]`` reports 95 % ± 5 on Iris with an unstated split.
 * ``[ASSUMPTION]`` code collisions.  The binarisation is lossy: two samples of different classes
   can share a 12-bit code, and a quantum state cannot hold two amplitudes for one basis state.
   We merge duplicates and average the labels (:func:`merge_duplicate_codes`), and report how

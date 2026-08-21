@@ -60,7 +60,7 @@ class KWSAConfig:
     """Re-evaluate the incumbent loss at the start of every iteration.  Needed when the objective
     is non-stationary (mini-batches, rotating episode seeds): a stale incumbent corrupts the
     Metropolis comparison — observed as 20/25 → 0/25 perfect Flappy games when training seeds
-    were rotated without this flag."""
+    were rotated without this flag, and 25/25 with it (``experiments/runs/flappy/batch5``)."""
 
 
 @dataclass

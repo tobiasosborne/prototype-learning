@@ -61,3 +61,15 @@ def test_memory_error_read_from_provenance() -> None:
 def test_tvd_is_half_l1() -> None:
     assert hp.tvd(np.array([1.0, 0.0]), np.array([0.0, 1.0])) == pytest.approx(1.0)
     assert math.isclose(hp.tvd(np.array([0.5, 0.5]), np.array([0.5, 0.5])), 0.0)
+
+
+def test_every_calibration_number_used_has_a_provenance_entry() -> None:
+    """Ground truth: each shipped device TOML must carry a ``[[provenance]]`` entry for every
+    non-trivial field the hardware plan reads; an unsourced number fails the build."""
+    devices = {n: presets.device(n, allow_missing=True) for n in presets.available_devices()}
+    pv = hp.section_provenance(devices)
+    gaps = {n: p["unsourced"] for n, p in pv.items() if p["unsourced"]}
+    assert gaps == {}, gaps
+    # and a sourced field really points at a URL with a quote
+    fez = pv["ibm_fez"]["fields"]["gate_2q_error"]["sources"][0]
+    assert fez["url"].startswith("http") and fez["quote"]

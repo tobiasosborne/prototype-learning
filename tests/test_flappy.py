@@ -326,3 +326,87 @@ def test_quantum_policy_learns_to_pass_twenty_pipes() -> None:
     res = tr.train(net, cfg=cfg, eval_seeds=(5, 6, 7, 8, 9), eval_steps=5000)
     assert res.loss < res.init_loss
     assert min(res.scores) >= 20, f"scores {res.scores} (loss {res.loss:.3f})"
+
+
+def test_train_with_rotating_batch_restates_incumbent_and_returns_final_point() -> None:
+    """Review 002 #8: ``batch > 0`` must switch on ``restate_incumbent`` and report the
+    annealer's final state, not the best-ever point of a non-stationary objective."""
+    from ptqnn.train import kwsa
+
+    net = Network(n_inputs=2, n_hidden=1, hidden="prototype")
+    cfg = kwsa.KWSAConfig(iterations=2, seed=0)
+    assert not cfg.restate_incumbent
+    res = tr.train(
+        net,
+        cfg=cfg,
+        seeds=(0, 1, 2, 3),
+        max_steps=40,
+        n_restarts=2,
+        restart_steps=20,
+        batch=2,
+        eval_seeds=(9,),
+        eval_steps=40,
+    )
+    # 1 initial + per iteration (1 restate + 3·n_params probes): the restate shows in the count
+    assert res.kwsa.evaluations == 1 + 2 * (1 + 3 * net.n_params)
+    assert res.kwsa.final_params is not None
+    assert np.array_equal(res.params, res.kwsa.final_params)
+    assert res.loss == res.kwsa.final_loss
+
+
+# --- shot-noise programme: margins and sampled decisions -------------------------------------
+
+
+def test_policy_records_frame_margins() -> None:
+    net = _net()
+    params = net.random_params(np.random.default_rng(3))
+    policy = tr.make_policy(net, params, tr.ObjectiveConfig(max_steps=100))
+    res = tr.evaluate(policy, (0,), 100)
+    assert len(policy.frame_margins) == res[0].steps
+    p = policy.activation(np.array([0.5, 0.5]))
+    policy.act(np.array([0.5, 0.5]))
+    assert policy.frame_margins[-1] == pytest.approx(abs(p - 0.5))
+    assert all(0.0 <= m <= 0.5 for m in policy.frame_margins)
+
+
+def test_margin_hinge_penalises_small_margins_only() -> None:
+    assert tr.margin_hinge([0.2, 0.3], margin=0.1) == 0.0
+    assert tr.margin_hinge([0.0, 0.1], margin=0.1) == pytest.approx(0.5)  # (1 + 0)/2
+    assert tr.margin_hinge([0.05], margin=0.1) == pytest.approx(0.5)
+    assert tr.margin_hinge([], margin=0.1) == 0.0
+
+
+def test_objective_with_margin_weight_adds_the_hinge() -> None:
+    net = _net()
+    params = net.random_params(np.random.default_rng(0))
+    plain = tr.ObjectiveConfig(max_steps=150)
+    hinged = tr.ObjectiveConfig(max_steps=150, margin=0.1, margin_weight=2.0)
+    base = tr.objective(net, seeds=(0, 1), cfg=plain)(params)
+    policy = tr.make_policy(net, params, plain)
+    tr.evaluate(policy, (0, 1), 150)
+    hinge = tr.margin_hinge(policy.frame_margins, 0.1)
+    assert tr.objective(net, seeds=(0, 1), cfg=hinged)(params) == pytest.approx(base + 2.0 * hinge)
+
+
+def test_sampled_decisions_flip_at_the_binomial_rate() -> None:
+    """``shots > 0``: the decision is ``Binomial(N, p)/N > ½``, so at ``p`` it flips with the
+    exact binomial tail probability (the closed form ``Φ(−2δ√N)`` is only its normal
+    approximation and is ~0.04 off at N = 100).  4000 draws, 3 σ tolerance."""
+    from scipy.stats import binom
+
+    net = _net()
+    params = net.random_params(np.random.default_rng(5))
+    policy = tr.make_policy(net, params, tr.ObjectiveConfig(max_steps=10))
+    obs = np.array([0.5, 0.5])
+    p = policy.activation(obs)
+    exact = p > 0.5
+    sampled = tr.make_policy(net, params, tr.ObjectiveConfig(max_steps=10), shots=100, shot_seed=1)
+    flips = sum(sampled.act(obs) != exact for _ in range(4000)) / 4000
+    # flap iff k/100 > 0.5 iff k ≥ 51
+    p_flap = float(binom.sf(50, 100, p))
+    expected = 1 - p_flap if exact else p_flap
+    sd = np.sqrt(expected * (1 - expected) / 4000)
+    assert abs(flips - expected) < 3 * sd
+    # and the normal approximation is in the right ballpark
+    assert abs(ag.flip_probability(abs(p - 0.5), 100) - expected) < 0.05
+    assert sampled.shots_used == 100 * 4000

@@ -57,6 +57,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--train-seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     p.add_argument("--eval-seeds", type=int, nargs="+", default=list(range(5, 25)))
     p.add_argument("--hidden", type=int, default=4, help="prototype neurons [PTQNN §III.D]")
+    p.add_argument(
+        "--batch",
+        type=int,
+        default=0,
+        help="rotate a batch of this many seeds from --train-seeds per sweep (0 = fixed seeds)",
+    )
     p.add_argument("--gif-frames", type=int, default=300)
     p.add_argument("--out", type=Path, default=ROOT / "experiments" / "runs" / "flappy" / stamp)
     return p.parse_args(argv)
@@ -96,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         restart_steps=args.restart_steps,
         eval_seeds=tuple(args.eval_seeds),
         eval_steps=args.eval_steps,
+        batch=args.batch,
         callback=on_iteration,
     )
     wall = time.perf_counter() - t0
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
         "kwsa": asdict(kw),
         "objective": {**asdict(oc), "env_config": asdict(oc.env_config)},
         "train_seeds": list(args.train_seeds),
+        "batch": args.batch,
+        "restate_incumbent": bool(args.batch),
         "eval_seeds": list(args.eval_seeds),
         "eval_steps": args.eval_steps,
         "n_restarts": args.restarts,

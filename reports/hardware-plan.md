@@ -2,8 +2,8 @@
 
 Status: v2, 2026-08-21 (PLAN.md §1 item 4, phase P10; v1's numbers were found wrong in
 review 002 blocker 1 and are regenerated here).  **Every number in this report is printed by
-`experiments/hardware_plan.py` into `experiments/runs/hardware-plan/20260821T070622Z/numbers.md`** (meta.json: git hash, seed 17,
-CuPy density-matrix backend, 119 s); the prose quotes that file and nothing else.
+`experiments/hardware_plan.py` into `experiments/runs/hardware-plan/20260821T073211Z/numbers.md`** (meta.json: git hash, seed 17,
+CuPy density-matrix backend, 118 s); the prose quotes that file and nothing else.
 Calibration numbers come from `src/ptqnn/noise/devices/*.toml` (retrieved 2026-08-20,
 per-field provenance with verbatim quotes; `devices/README.md` lists what is sourced and what is
 missing).  Gate counts come from `transpile.compile_for` run against the real `DeviceSpec`s
@@ -353,3 +353,33 @@ and, on lattices, the SWAPs — so a hardware KL comparison is lost on every sup
 device and survives only on H-series and, marginally, on Forte.  Expect the hardware bit-count
 histogram to be visibly flattened toward uniform on every superconducting device and
 recognisable on H1/H2 and Forte.
+
+---
+
+## 7. Provenance and assumptions (ground truth)
+
+Every calibration number above traces to a `[[provenance]]` entry in the device TOML it came
+from — source URL, source kind (vendor calibration page, vendor paper, third-party calibration
+snapshot), retrieval date and a verbatim quote.  `experiments/hardware_plan.py` joins those
+entries to every field it reads and **refuses to write a run** if any field lacks one
+(`tests/test_hardware_plan_script.py::test_every_calibration_number_used_has_a_provenance_entry`);
+the full per-field table (≈60 rows, with quotes) is `experiments/runs/hardware-plan/20260821T073211Z/numbers.md` §provenance.  What is
+*not* vendor-published and enters as an `[ASSUMPTION]`:
+
+| id | assumption | affects |
+|---|---|---|
+| A1 | IQM Garnet / Rigetti Ankaa-3 1q gate duration 40 ns (unpublished) | their critical path, F(idle), cost rows |
+| A2 | Quantinuum idle error `(1 − m)^(n_qubits·depth)` from the published memory error per depth-1 time | F(idle) for H1-1/H2-1; their simulated TVD omits it |
+| A3 | F(readout) = `(1 − (p01+p10)/2)^n` | readout column |
+| A4 | IBM $1.60 per QPU second + 30 s per-job overhead | ibm_fez cost rows |
+| A5 | Quantinuum ≈ $12.5/HQC (Azure Standard plan ÷ its HQC allotment) | USD column for H1/H2 |
+| A6 | Braket per-shot prices and the Azure AQT IonQ formula, retrieved 2026-08-20 | Forte / Garnet cost rows |
+| A7 | State-preparation CNOT counts: Shende–Bullock–Markov `2^(n+1)−2n−2`, Plesch–Brukner `≈23/24·2^n`, sparse leading term `k·n` (Gleinig–Hoefler) with k = 120 | §3.3 |
+| A8 | Quantinuum HQC `N_m = 2·n_qubits` | HQC counts |
+| A9 | Flappy simulated TVD averaged over 5 observations (grid corners + centre) | Flappy TVD column |
+
+Known gaps in the vendor data itself (recorded in `devices/README.md`, not papered over): Rigetti
+publishes no 1q error, no readout error, no T1/T2 (its fidelity rows are upper bounds);
+Quantinuum publishes no gate durations and no T1/T2; IQM's T1/T2 are a third-party snapshot; IBM's
+numbers are medians we computed from the per-qubit table of one dated calibration snapshot
+(props_fez.json, 2025-02-26).

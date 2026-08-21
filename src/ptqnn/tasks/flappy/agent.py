@@ -27,6 +27,7 @@ binary decision from it is a median split.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,7 @@ from typing import Any, Protocol
 import numpy as np
 import numpy.typing as npt
 
+from ptqnn.backends import batched
 from ptqnn.backends import reference as ref
 from ptqnn.backends.base import Backend
 from ptqnn.circuits import ir
@@ -68,6 +70,16 @@ def encode(
     ``θ = 2·asin(√x)`` ``[SNN Fig 4, §III.A]`` unless ``mapping="linear"``.
     """
     return [ir.rx(i, float(t)) for i, t in enumerate(angles(obs, mapping, scale))]
+
+
+def flip_probability(margin: float, shots: int) -> float:
+    """``P[Binomial(N, ½ ± δ)/N`` lands on the wrong side of ``½]`` in the normal approximation,
+    ``Φ(−2δ√N)``: the per-frame chance that ``N`` shots flip a decision of margin ``δ``."""
+    if margin < 0:
+        raise ValueError("margin must be non-negative")
+    if shots <= 0:
+        return 0.0
+    return float(0.5 * math.erfc(margin * math.sqrt(2.0 * shots)))
 
 
 class Policy(Protocol):
@@ -112,27 +124,32 @@ class QuantumFlappyPolicy:
     cache_levels: int = 64
     fast_linear: bool = True
     decision_cache: dict[tuple[float, ...], bool] = field(default_factory=dict, repr=False)
+    shots: int = 0
+    """``0``: decide on the exact expectation value.  ``N > 0``: decide on ``Binomial(N, p)/N``
+    drawn afresh every frame — the hardware situation, where ``P(out = 1)`` is only ever a
+    finite-shot estimate.  Not cached (every frame is a new draw)."""
+    shot_seed: int = 0
+    activation_cache: dict[tuple[float, ...], float] = field(default_factory=dict, repr=False)
+    frame_margins: list[float] = field(default_factory=list, repr=False)
+    """``|P(out = 1) − threshold|`` of every frame played, in order — the decision margin that
+    sets the shot budget (``flips/frame ≈ Φ(−2δ√N)``; ``reports/noise.md``)."""
+    shots_used: int = 0
 
     def __post_init__(self) -> None:
         self.params = np.asarray(self.params, dtype=np.float64).ravel()
         self._columns: Complex | None = None
         if self.fast_linear and isinstance(self.backend, ref.StatevectorBackend):
             self._columns = self._input_basis_columns()
+        if self.shots < 0:
+            raise ValueError("shots must be ≥ 0")
+        self._rng = np.random.default_rng(self.shot_seed)
 
     # -- evaluation -------------------------------------------------------------------------
 
     def _input_basis_columns(self) -> Complex:
-        """``V[:, b] = U_tail |b, 0…0⟩`` for the ``2^n_inputs`` input basis strings."""
-        net, n = self.net, self.net.n_qubits
-        tail = net.circuit(self.params)
-        cols = np.empty((2**n, 2**net.n_inputs), dtype=np.complex128)
-        for b in range(2**net.n_inputs):
-            psi0 = np.zeros(2**n, dtype=np.complex128)
-            # qubit q contributes bit (n-1-q) of the basis index; inputs are qubits 0..n_in-1.
-            idx = sum(((b >> (net.n_inputs - 1 - q)) & 1) << (n - 1 - q) for q in net.input_qubits)
-            psi0[idx] = 1.0
-            cols[:, b] = ref.run_statevector(tail, psi0)
-        return cols
+        """``V[:, b] = U_tail |b, 0…0⟩`` for the ``2^n_inputs`` input basis strings
+        (:func:`ptqnn.backends.batched.basis_columns`)."""
+        return batched.basis_columns(self.net.circuit(self.params), self.net.input_qubits)
 
     def _fast_activation(self, obs: Real, columns: Complex) -> float:
         net = self.net
@@ -157,18 +174,32 @@ class QuantumFlappyPolicy:
         prep = encode(obs, self.angle_map, self.angle_scale)
         return distribution.output_activation(self.net, self.params, prep, self.backend)
 
+    def _cached_activation(self, obs: Real) -> float:
+        key = quantise(obs, self.cache_levels)
+        p = self.activation_cache.get(key)
+        if p is None:
+            grid = np.asarray(obs, dtype=np.float64)
+            if self.cache_levels > 0:
+                grid = np.asarray(key, dtype=np.float64) / self.cache_levels
+            p = self.activation(grid)
+            self.activation_cache[key] = p
+        return p
+
     def act(self, obs: Real) -> bool:
-        """Flap iff ``P(out = 1) > threshold`` ``[ASSUMPTION]``."""
+        """Flap iff ``P(out = 1) > threshold`` ``[ASSUMPTION]`` — on the exact value, or on a
+        fresh ``shots``-sample estimate of it."""
+        p = self._cached_activation(obs)
+        self.frame_margins.append(abs(p - self.threshold))
+        if self.shots > 0:
+            self.shots_used += self.shots
+            k = int(self._rng.binomial(self.shots, min(max(p, 0.0), 1.0)))
+            return bool(k / self.shots > self.threshold)
         key = quantise(obs, self.cache_levels)
         hit = self.decision_cache.get(key)
-        if hit is not None:
-            return hit
-        grid = np.asarray(obs, dtype=np.float64)
-        if self.cache_levels > 0:
-            grid = np.asarray(key, dtype=np.float64) / self.cache_levels
-        decision = bool(self.activation(grid) > self.threshold)
-        self.decision_cache[key] = decision
-        return decision
+        if hit is None:
+            hit = bool(p > self.threshold)
+            self.decision_cache[key] = hit
+        return hit
 
     def decision_grid(self, levels: int = 64) -> npt.NDArray[np.bool_]:
         """``act`` evaluated on the full 2-feature grid — the policy's decision boundary."""

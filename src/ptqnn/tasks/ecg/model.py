@@ -19,6 +19,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
+from ptqnn.backends import batched
 from ptqnn.backends.base import Backend
 from ptqnn.circuits import ir
 from ptqnn.circuits.neurons import Network
@@ -84,46 +85,6 @@ def decode(
 # --- forward pass -----------------------------------------------------------------------------
 
 
-def _mix(view: Complex, m: Complex, axis: int) -> None:
-    """In-place 2×2 mixing of ``view`` along ``axis`` (a length-2 axis): the whole cost of the
-    forward pass.  Written as slice arithmetic rather than ``tensordot`` because the batched
-    state is tens of megabytes and every avoided copy shows up in the training time."""
-    s0: list[slice | int] = [slice(None)] * view.ndim
-    s1: list[slice | int] = [slice(None)] * view.ndim
-    s0[axis], s1[axis] = 0, 1
-    i0, i1 = tuple(s0), tuple(s1)
-    a0 = view[i0].copy()
-    a1 = view[i1]
-    view[i0] = m[0, 0] * a0 + m[0, 1] * a1
-    view[i1] = m[1, 0] * a0 + m[1, 1] * a1
-
-
-def _apply_gate_batched(state: Complex, gate: ir.Gate, n: int) -> None:
-    """Apply ``gate`` in place to a ``(B, 2^n)`` batch of statevectors.
-
-    Handles the only two shapes this task builds: a single-qubit gate, and a controlled
-    single-qubit gate (``|0⟩⟨0| ⊗ I + |1⟩⟨1| ⊗ U``, the form :func:`ptqnn.circuits.ir.crx`
-    emits).  Anything else raises rather than silently taking a slow path.
-    """
-    B = state.shape[0]
-    if gate.n_qubits == 1:
-        (q,) = gate.qubits
-        _mix(state.reshape(B, 2**q, 2, 2 ** (n - q - 1)), gate.matrix, 2)
-        return
-    if gate.n_qubits != 2:
-        raise NotImplementedError(f"gate {gate.name!r} acts on {gate.n_qubits} qubits")
-    c, tq = gate.qubits
-    u = gate.matrix[2:, 2:]
-    if not np.allclose(gate.matrix[:2, :2], np.eye(2)) or np.any(gate.matrix[:2, 2:]):
-        raise NotImplementedError(f"gate {gate.name!r} is not a controlled single-qubit gate")
-    lo, hi = min(c, tq), max(c, tq)
-    view = state.reshape(B, 2**lo, 2, 2 ** (hi - lo - 1), 2, 2 ** (n - hi - 1))
-    if c < tq:
-        _mix(view[:, :, 1], u, 3)
-    else:
-        _mix(view[:, :, :, :, 1], u, 2)
-
-
 def _batched_activation(
     net: Network, params: Real, X: Real, encoding: Encoding, scale: float
 ) -> Real:
@@ -133,25 +94,18 @@ def _batched_activation(
     the batch is carried as an extra leading axis of the statevector: memory ``B · 2^n``, and one
     pass per gate instead of one per gate *and* window.  For 1800 windows on 9 qubits this is
     ~100× faster than looping the reference backend, which is what makes a KW–SA sweep over the
-    whole signal affordable.
+    whole signal affordable.  The kernel is :mod:`ptqnn.backends.batched` (shared with Flappy
+    and Iris; unitary-only, raises on channels).
     """
     n = net.n_qubits
-    B = X.shape[0]
     # product state of the five inputs: RX(θ)|0⟩ = [cos(θ/2), −i sin(θ/2)]
     half = 0.5 * angles(X, encoding, scale)
     amps = np.stack([np.cos(half), -1j * np.sin(half)], axis=-1)  # (B, n_inputs, 2)
-    v = np.ones((B, 1), dtype=np.complex128)
-    for i in range(net.n_inputs):
-        v = (v[:, :, None] * amps[:, i, None, :]).reshape(B, -1)
-    state = np.zeros((B, 2**n), dtype=np.complex128)
-    state[:, :: 2 ** (n - net.n_inputs)] = v  # hidden + output qubits start in |0⟩ (low bits)
-
-    for op in net.circuit(params).ops:
-        if not isinstance(op, ir.Gate):
-            raise TypeError("the batched path is unitary-only; pass a backend for channels")
-        _apply_gate_batched(state, op, n)
-    p = np.abs(state) ** 2
-    return np.asarray(p[:, 1::2].sum(axis=1), dtype=np.float64)  # output qubit is the LSB
+    state = batched.product_input_states(amps, n, net.n_inputs)
+    p = batched.batch_probabilities(net.circuit(params), state)
+    bit = n - 1 - net.output_qubit
+    mask = ((np.arange(2**n) >> bit) & 1) == 1
+    return np.asarray(p[:, mask].sum(axis=1), dtype=np.float64)
 
 
 def predict(

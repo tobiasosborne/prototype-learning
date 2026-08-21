@@ -58,13 +58,17 @@ amplitude carries the label, the histogram its square (pinned in `tasks/iris/mod
 
 | | paper | ours (seeds 0/1/2) |
 |---|---|---|
-| test accuracy, prototype | ≈98 % | 95 / 91 / 98 % (encoding ceiling 97 % on our split) |
+| test accuracy, prototype | ≈98 % | 95 / 91 / 98 % (encoding ceilings 97 / 99 / 99 % on the three splits) |
 | test accuracy, classic | — | 95 / 92 / 91 % |
-| Fig 7 classic | train → 0, test rises to ≈0.045 | train → 0 within 1–4 sweeps, test bottoms at 0.033 then rises/plateaus |
+| Fig 7 classic | train → 0, test rises to ≈0.045 | train → 0 within 1–4 sweeps; test KL ends at 0.033 / 0.028 / 0.043 after bottoming earlier (seed 1: 0.024 at sweep 4, seed 2: 0.035 at sweep 2) |
 | Fig 7 prototype | both descend to ≈0.01/0.02 | train 0.003–0.014, test monotone, minimum at the last sweep |
 | Fig 9 TSNE | prototype weights span the data | **not reproduced** — both weight sets cluster away from the data |
 
-Assumptions: 1/3 stratified train split (matches Fig 8 bin counts 15/30), collisions merged by mean
+Assumptions: 1/3 stratified train split — **chosen, not derived from Fig 8**: the paper states no
+split; Fig 8 shows 15 (train) / 30 (test) non-empty bins, our 50/100 splits give 14/20, 12/20 and
+14/18 distinct codes (seeds 0/1/2; `meta.json` `split.distinct_*_codes`), so the train side is a
+near-match and the test side is not (a 12-bit one-hot-per-feature code simply does not spread 100
+samples over 30 codes on any split we tried; review 002 #9).  Collisions merged by mean
 label, KL renormalised over all 4096 inputs (post-selecting on dataset codes lets the prototype net
 exploit inter-sample interference: train KL 1e-5 but read-out at chance).  **Fig 7/8: reproduced
 qualitatively; accuracy in range; Fig 9: discrepancy.**
@@ -79,8 +83,14 @@ on all 20 held-out seeds** — the clone's equivalent of the paper's "plays the 
 Our clone (`ptqnn/tasks/flappy/env.py`, all constants `[ASSUMPTION]`) uses flap −7 px/frame and
 gap/spacing 120/180 px: the classic −9/100/144 is provably unsolvable for a memoryless policy
 (flap overshoot 40.5 px > 38 px budget), which is not what the paper's demonstrator tested.
-Negative result: rotating training seeds per iteration breaks KW–SA because the incumbent loss is
-not re-scored (`kwsa.minimise` is built for stationary objectives).  **Reproduced (on our clone).**
+Rotating training seeds: in session 1 a rotating 5-of-10 seed batch gave 0/25 perfect games
+because `kwsa.minimise` carried a stale incumbent loss across batches; with the incumbent
+re-scored every sweep (`restate_incumbent`, now switched on automatically by `train(batch > 0)`)
+and the annealer's final point reported, the same protocol gives **25/25 perfect games**
+(`experiments/runs/flappy/batch5`, 86 s, 1 601 evaluations) against 25/25 for fixed seeds on the
+same 25 held-out episodes (`experiments/runs/flappy/batch0`, 113 s, 1 576) — the earlier
+negative result was an optimiser artefact, not a property of the task (review 002 #8).
+**Reproduced (on our clone).**
 
 ## Fig 12–13, Table I — ECG
 

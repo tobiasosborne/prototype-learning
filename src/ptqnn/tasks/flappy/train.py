@@ -18,10 +18,14 @@ below is ``[ASSUMPTION]``:
 * **Episode length over episode count.** Coverage of pipe-height *transitions* is what
   generalises: five 1500-frame episodes (≈165 transitions) beat eight 800-frame ones on
   held-out seeds (20/20 vs 15/20 perfect games).  A rotating seed batch (:class:`SeedRotation`)
-  looks like the textbook fix and is *worse* here — 0/25 — because
-  :func:`ptqnn.train.kwsa.minimise` carries its incumbent loss across iterations without
-  re-evaluating it, so a rotated batch makes the Metropolis comparison meaningless.  It is kept
-  off by default (``batch=0``) and would need an optimiser that re-scores the incumbent.
+  is a non-stationary objective, so ``train(batch > 0)`` switches on
+  ``KWSAConfig.restate_incumbent`` (the incumbent is re-scored on every new batch; without it the
+  Metropolis comparison used a stale loss and held-out play collapsed from 20/25 to 0/25 perfect
+  games — review 002 #8) and reports the annealer's *final* point rather than the best-ever one,
+  which under a rotating batch is merely the point that drew the luckiest batch.  Measured:
+  25/25 perfect held-out games with a 5-of-10 rotating batch (``experiments/runs/flappy/batch5``)
+  vs 25/25 with fixed seeds (``…/batch0``) — no longer worse, not better either.  Off by default
+  because it buys nothing here.
 * **Budget.** We do not attempt the paper's 6-day run.  The target is deterministic perfect play
   on our clone under a step cap: 5000 frames at one pipe per 45 frames is 110 pipes.  The
   defaults (300 restarts + 25 coordinate sweeps ≈ 1575 loss evaluations, ~3 min) reach 110/110
@@ -87,10 +91,31 @@ class ObjectiveConfig:
     """``θ = 2·asin(√x)`` ``[SNN Fig 4, §III.A]``; ``"linear"`` for the ``θ = π·x`` ablation."""
     angle_scale: float = 1.0
     cache_levels: int = 64
+    margin: float = 0.0
+    """Margin-aware training (shot-noise programme, item 1): frames whose decision margin
+    ``δ = |P(out=1) − ½|`` is below ``margin`` are penalised by ``margin_weight · hinge``, with
+    ``hinge = mean_frames max(0, 1 − δ/margin)``.  Shots to decide a frame scale as ``1/δ²``, so
+    lifting the median margin from 0.02 to 0.1 is ×25 fewer shots; it costs nothing noiselessly.
+    ``margin = 0`` (default) reproduces the paper-style objective.  ``[ASSUMPTION]``."""
+    margin_weight: float = 0.0
+
+
+def margin_hinge(margins: Sequence[float], margin: float) -> float:
+    """``mean_i max(0, 1 − δ_i/m)`` over the played frames — 0 when every frame clears ``m``,
+    1 when every frame sits exactly on the boundary."""
+    if margin <= 0 or len(margins) == 0:
+        return 0.0
+    d = np.asarray(margins, dtype=np.float64)
+    return float(np.mean(np.maximum(0.0, 1.0 - d / margin)))
 
 
 def make_policy(
-    net: Network, params: Real, cfg: ObjectiveConfig, backend: Backend | None = None
+    net: Network,
+    params: Real,
+    cfg: ObjectiveConfig,
+    backend: Backend | None = None,
+    shots: int = 0,
+    shot_seed: int = 0,
 ) -> ag.QuantumFlappyPolicy:
     return ag.QuantumFlappyPolicy(
         net=net,
@@ -100,6 +125,8 @@ def make_policy(
         angle_map=cfg.angle_map,
         angle_scale=cfg.angle_scale,
         cache_levels=cfg.cache_levels,
+        shots=shots,
+        shot_seed=shot_seed,
     )
 
 
@@ -133,11 +160,10 @@ class SeedRotation:
 
     The batch is held constant *within* an iteration so that that sweep's central differences
     see the same episodes; KW is built for noisy evaluations ("estimates the gradient of an
-    objective function from noisy function evaluations" ``[PTQNN §II.C]``).  Across iterations,
-    however, :func:`ptqnn.train.kwsa.minimise` reuses the incumbent loss it computed on the
-    previous batch, so every rotation corrupts the Metropolis comparison; measured, this turns
-    20/25 perfect held-out games into 0/25.  Kept for the record and for optimisers that
-    re-score the incumbent.
+    objective function from noisy function evaluations" ``[PTQNN §II.C]``).  Across iterations
+    the objective changes, so :func:`train` pairs it with ``restate_incumbent=True`` — without
+    that flag :func:`ptqnn.train.kwsa.minimise` reused the incumbent loss from the previous batch
+    and held-out play collapsed from 20/25 to 0/25 perfect games.
     """
 
     def __init__(self, pool: Sequence[int], batch: int, rng: np.random.Generator) -> None:
@@ -168,7 +194,10 @@ def objective(
         batch = seeds.seeds if isinstance(seeds, SeedRotation) else seeds
         policy = make_policy(net, params, c, backend)
         results = evaluate(policy, batch, c.max_steps, c.env_config, c.features)
-        return episode_loss(results, c.shaping_weight)
+        value = episode_loss(results, c.shaping_weight)
+        if c.margin > 0 and c.margin_weight > 0:
+            value += c.margin_weight * margin_hinge(policy.frame_margins, c.margin)
+        return value
 
     return loss
 
@@ -238,16 +267,21 @@ def train(
 
     ``seeds`` are the training episodes — every loss evaluation plays all of them.  With
     ``batch > 0`` they instead become a pool from which each iteration draws a fresh
-    :class:`SeedRotation` batch (not recommended, see the module docstring).  ``eval_seeds`` are
-    the held-out episodes the final score is reported on.
+    :class:`SeedRotation` batch; the optimiser then re-scores the incumbent every iteration
+    (``restate_incumbent``) and the returned parameters are the annealer's final state, not its
+    best-ever one (see the module docstring).  ``eval_seeds`` are the held-out episodes the
+    final score is reported on.
     """
     k = cfg or DEFAULT_KWSA
     oc = replace(objective_config or ObjectiveConfig(), max_steps=max_steps)
     rng = np.random.default_rng(k.seed)
 
+    rotating = 0 < batch < len(seeds)
     train_seeds: Sequence[int] | SeedRotation = (
-        SeedRotation(seeds, batch, rng) if 0 < batch < len(seeds) else seeds
+        SeedRotation(seeds, batch, rng) if rotating else seeds
     )
+    if rotating and not k.restate_incumbent:
+        k = replace(k, restate_incumbent=True)
 
     cheap = objective(net, train_seeds, replace(oc, max_steps=restart_steps), backend)
     x0, f0 = random_restarts(net, cheap, n_restarts, rng)
@@ -260,12 +294,16 @@ def train(
 
     loss = objective(net, train_seeds, oc, backend)
     res = kwsa.minimise(loss, x0, k, callback=on_iteration)
+    # Under a rotating batch "best loss ever seen" selects the luckiest batch; the final
+    # accepted state is the honest answer (review 002 #8).
+    params = res.final_params if (rotating and res.final_params is not None) else res.params
+    loss_out = res.final_loss if rotating else res.loss
 
-    policy = make_policy(net, res.params, oc, backend)
+    policy = make_policy(net, params, oc, backend)
     results = evaluate(policy, eval_seeds or seeds, eval_steps, oc.env_config, oc.features)
     return FlappyTrainResult(
-        params=res.params,
-        loss=res.loss,
+        params=params,
+        loss=loss_out,
         history=res.history,
         kwsa=res,
         init_loss=f0,

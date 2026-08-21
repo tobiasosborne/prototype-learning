@@ -30,6 +30,10 @@ Sections (the keys of ``numbers.json``):
 * ``noise_run`` — TVD / KL per device for the trained bit-count model, copied from
   ``experiments/runs/bitcount_noise/<stamp>/results.json`` (not recomputed).
 * ``stateprep`` — dense / sparse CNOT counts for the Iris dataset state.
+* ``provenance`` — ground truth: for every calibration field a device's numbers come from, the
+  TOML's ``[[provenance]]`` entry (value, source URL, retrieval date, verbatim quote); any field
+  used without one is listed under ``unsourced`` and logged loudly.  ``assumptions`` lists every
+  ``[ASSUMPTION]`` the numbers depend on, with what it affects.
 
 Fail fast, log eagerly: every device/circuit pair prints a line with its wall time the moment
 it finishes (``flush=True``), so a blow-out is visible within seconds.
@@ -470,6 +474,153 @@ def section_stateprep(n: int = 12, k_train: int = 120) -> dict[str, Any]:
     }
 
 
+# --- provenance ---------------------------------------------------------------------------------
+
+# Which TOML provenance ``field`` strings vouch for which DeviceSpec attribute.  A provenance entry
+# whose field is ``"snapshot epoch"`` vouches for every field of that file (one coherent vendor
+# snapshot, e.g. ibm_fez's props_fez.json).
+_FIELD_KEYS: dict[str, tuple[str, ...]] = {
+    "gate_1q_error": ("gate_1q.error", "gate_1q"),
+    "gate_1q_ns": ("gate_1q.duration", "gate_1q"),
+    "gate_2q_error": ("gate_2q.error", "gate_2q"),
+    "gate_2q_ns": ("gate_2q.duration", "gate_2q"),
+    "t1_us": ("t1_us",),
+    "t2_us": ("t2_us",),
+    "readout_p01": ("readout",),
+    "readout_p10": ("readout",),
+    "readout_ns": ("readout.duration", "readout_length", "readout"),
+    "memory_error": ("memory error",),
+    "n_qubits": ("n_qubits",),
+    "topology": ("topology",),
+    "native_2q": ("native_2q",),
+}
+
+ASSUMPTIONS: tuple[dict[str, str], ...] = (
+    {
+        "id": "A1",
+        "assumption": "IQM Garnet and Rigetti Ankaa-3 1q gate duration = 40 ns (unpublished)",
+        "affects": "critical path, F_idle and every cost row of those two devices",
+        "basis": "IQM Radiance data sheet bounds PRX at 40 ns; Rigetti ±π/2 RX is of that order",
+    },
+    {
+        "id": "A2",
+        "assumption": "Quantinuum idle error = (1 − m)^(n_qubits·depth), m = memory error per "
+        "depth-1 circuit time",
+        "affects": "F_idle for H1-1 / H2-1 (no T1/T2 published); their simulated TVD omits it",
+        "basis": "vendor's own depth-1 definition; the product over qubits and layers is the "
+        "first-order independent-error model",
+    },
+    {
+        "id": "A3",
+        "assumption": "F_readout = (1 − (p01 + p10)/2)^n_qubits",
+        "affects": "F_readout column",
+        "basis": "symmetrised single-qubit confusion; the vendors' 'readout error' is this mean",
+    },
+    {
+        "id": "A4",
+        "assumption": "IBM pay-as-you-go = USD 1.60 per QPU second + 30 s per-job overhead",
+        "affects": "ibm_fez cost rows",
+        "basis": "executor.cost_estimate; rate is IBM's 2022 launch figure, corroborated by a "
+        "secondary $96/min report; overhead is unpublished",
+    },
+    {
+        "id": "A5",
+        "assumption": "Quantinuum USD ≈ 12.5 per HQC",
+        "affects": "USD column of the H1/H2 cost rows (the HQC count itself is the vendor formula)",
+        "basis": "Azure Standard plan $125 000/month for 10 000 HQC; no public PAYG rate",
+    },
+    {
+        "id": "A6",
+        "assumption": "Braket per-shot prices (IonQ Forte $0.08, IQM Garnet $0.00145, task $0.30) "
+        "and Azure AQT IonQ formula as in executor._BRAKET_PER_SHOT / cost_estimate",
+        "affects": "ionq_forte and iqm_garnet cost rows",
+        "basis": "aws.amazon.com/braket/pricing and learn.microsoft.com/azure/quantum/pricing, "
+        "retrieved 2026-08-20",
+    },
+    {
+        "id": "A7",
+        "assumption": "Dense state-prep CNOT counts 2^(n+1) − 2n − 2 (Shende–Bullock–Markov, "
+        "IEEE TCAD 25, 1000 (2006)) and ≈23/24·2^n (Plesch–Brukner, PRA 83, 032302 (2011)); "
+        "sparse leading term k·n (Gleinig–Hoefler, DAC 2021) with k = 120 Iris training points",
+        "affects": "stateprep section / report §3.3",
+        "basis": "published asymptotic bounds; the sparse constant is implementation-dependent",
+    },
+    {
+        "id": "A8",
+        "assumption": "Quantinuum HQC formula N_m = 2·n_qubits (one prep + one measurement per "
+        "qubit)",
+        "affects": "HQC counts",
+        "basis": "vendor docs count 'state preparation and measurement operations'",
+    },
+    {
+        "id": "A9",
+        "assumption": "Flappy simulated TVD = mean over 5 observations (grid corners + centre)",
+        "affects": "Flappy sim TVD column",
+        "basis": "our choice of representative inputs",
+    },
+)
+
+
+def section_provenance(devices: dict[str, presets.DeviceSpec]) -> dict[str, Any]:
+    """Per device: which published number backs each field, and which fields have none."""
+    out: dict[str, Any] = {}
+    for name in devices:
+        raw = presets.device(name, allow_missing=True)  # before any ASSUMED_1Q_NS substitution
+        entries = list(raw.provenance)
+        epoch = [e for e in entries if str(e.get("field", "")).strip() == "snapshot epoch"]
+        used: dict[str, Any] = {
+            "gate_1q_error": raw.gate_1q_error,
+            "gate_1q_ns": raw.gate_1q_ns,
+            "gate_2q_error": raw.gate_2q_error,
+            "gate_2q_ns": raw.gate_2q_ns,
+            "t1_us": raw.t1_us,
+            "t2_us": raw.t2_us,
+            "readout_p01": raw.readout_p01,
+            "readout_p10": raw.readout_p10,
+            "readout_ns": raw.readout_ns,
+            "memory_error": memory_error(raw),
+            "n_qubits": raw.n_qubits,
+            "topology": raw.topology,
+            "native_2q": list(raw.native_2q),
+        }
+        fields: dict[str, Any] = {}
+        unsourced: list[str] = []
+        for key, value in used.items():
+            if value in (None, 0, 0.0, "", []):
+                fields[key] = {"value": value, "status": "not published / not used"}
+                continue
+            hits = [
+                e for e in entries if any(k in str(e.get("field", "")) for k in _FIELD_KEYS[key])
+            ] or epoch
+            if not hits:
+                unsourced.append(key)
+                fields[key] = {"value": value, "status": "UNSOURCED"}
+                continue
+            fields[key] = {
+                "value": value,
+                "sources": [
+                    {
+                        "field": str(e.get("field", "")),
+                        "value": e.get("value"),
+                        "url": str(e.get("source_url", "")),
+                        "kind": str(e.get("source_kind", "")),
+                        "retrieved_at": str(e.get("retrieved_at", "")),
+                        "quote": str(e.get("quote", "")),
+                    }
+                    for e in hits
+                ],
+            }
+        if unsourced:
+            log(f"PROVENANCE GAP {name}: {unsourced}")
+        out[name] = {
+            "fields": fields,
+            "unsourced": unsourced,
+            "n_provenance_entries": len(entries),
+            "substituted": {"gate_1q_ns": ASSUMED_1Q_NS[name]} if name in ASSUMED_1Q_NS else {},
+        }
+    return out
+
+
 # --- rendering ----------------------------------------------------------------------------------
 
 
@@ -602,6 +753,39 @@ def render(num: dict[str, Any], devices: list[str]) -> str:
     for k, v in sp.items():
         w(f"- {k}: {_f(v)}")
 
+    w("\n## provenance (ground truth for every calibration number above)\n")
+    w(
+        "One row per (device, field) actually used; `value` is what the TOMLs carry, `source` the "
+        "vendor/third-party page it was read from (retrieved date), `quote` the verbatim text. "
+        "`UNSOURCED` would mean a number with no provenance entry — none is allowed.\n"
+    )
+    w("| device | field | value | source (kind, retrieved) | quote |")
+    w("|---|---|---:|---|---|")
+    for d, pv in num["provenance"].items():
+        for key, fe in pv["fields"].items():
+            if "sources" not in fe:
+                if fe["status"] == "UNSOURCED":
+                    w(f"| {d} | {key} | {_f(fe['value'])} | **UNSOURCED** | |")
+                continue
+            for src in fe["sources"]:
+                q = src["quote"].replace("|", "\\|").replace("\n", " ")
+                if len(q) > 160:
+                    q = q[:157] + "…"
+                w(
+                    f"| {d} | {key} | {_f(fe['value'])} | [{src['kind']}]({src['url']}) "
+                    f"({src['retrieved_at']}) | {q} |"
+                )
+        if pv["substituted"]:
+            w(
+                f"| {d} | gate_1q_ns | {pv['substituted']['gate_1q_ns']} | **[ASSUMPTION A1]** | "
+                "no published value; substituted |"
+            )
+    w("\n## assumptions\n")
+    w("| id | assumption | affects | basis |")
+    w("|---|---|---|---|")
+    for a in num["assumptions"]:
+        w(f"| {a['id']} | {a['assumption']} | {a['affects']} | {a['basis']} |")
+
     w("\n## lowest published 2q error\n")
     for d, e in sorted(num["device_2q_error"].items(), key=lambda kv: kv[1]):
         w(f"- {d}: {e:g}")
@@ -663,6 +847,11 @@ def main(argv: list[str] | None = None) -> Path:
     num["noise_run"] = section_noise_run()
     num["stateprep"] = section_stateprep()
     num["device_2q_error"] = {n: d.gate_2q_error for n, d in devices.items()}
+    num["provenance"] = section_provenance(devices)
+    num["assumptions"] = list(ASSUMPTIONS)
+    gaps = {n: p["unsourced"] for n, p in num["provenance"].items() if p["unsourced"]}
+    if gaps:
+        raise RuntimeError(f"calibration numbers without provenance: {gaps}")
 
     (out / "numbers.json").write_text(json.dumps(num, indent=1, default=float))
     (out / "numbers.md").write_text(render(num, names))
