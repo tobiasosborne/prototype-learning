@@ -1,0 +1,125 @@
+\section{Notation and definitions}
+\label{sec:notation}
+
+This section defines every symbol used later.  A reader who knows quantum circuits can skim it;
+a reader who does not should find here everything needed to follow the rest.
+
+\paragraph{Qubits, states, measurement.}
+A \emph{qubit} is a two-level quantum system with basis states $\ket{0}$ and $\ket{1}$.  The
+state of $n$ qubits is a unit vector $\psi \in \mathbb{C}^{2^n}$ whose components are indexed by
+$n$-bit strings; we write the string with \emph{qubit~1 (the first input) as the most significant
+bit}, matching the paper's circuit figures, which number qubits from the top.  Measuring all
+qubits returns the bit string $x$ with probability $|\psi_x|^2$.  When only some qubits are
+measured, the probability of their outcome is the sum of $|\psi_x|^2$ over the strings $x$ that
+agree with it on those qubits (the \emph{marginal}).  A \emph{mixed} state, needed as soon as
+noise enters, is a positive matrix $\rho$ of unit trace (the \emph{density matrix}); a pure state
+is $\rho=\psi\psi^\dagger$, and measurement probabilities are its diagonal entries.
+
+\paragraph{Gates.}
+A gate is a unitary matrix acting on one or two qubits.  The ones the paper uses are
+\begin{align}
+\RX(\theta) &= \begin{pmatrix}\cos\frac{\theta}{2} & -i\sin\frac{\theta}{2}\\[2pt]
+-i\sin\frac{\theta}{2} & \cos\frac{\theta}{2}\end{pmatrix}, \qquad
+H = \tfrac{1}{\sqrt2}\begin{pmatrix}1&1\\1&-1\end{pmatrix}, \\
+\CRX(\theta) &= \ket{0}\bra{0}\otimes I + \ket{1}\bra{1}\otimes \RX(\theta)
+\quad\text{(rotate the target by $\theta$ only if the control is $\ket{1}$).}
+\end{align}
+$\RX(\theta)\ket{0} = \cos\frac{\theta}{2}\ket{0} - i\sin\frac{\theta}{2}\ket{1}$, so after
+$\RX(\theta)$ a qubit prepared in $\ket{0}$ is measured as $1$ with probability
+$\sin^2(\theta/2)$.  $H$ turns $\ket{0}$ into the equal superposition
+$(\ket{0}+\ket{1})/\sqrt2$; $H$ on every input qubit prepares all $2^n$ input strings at once with
+equal weight.
+
+\paragraph{Encoding a real number as an angle.}
+A feature value $s\in[0,1]$ enters the circuit as $\RX(\theta(s))$ on its input qubit.  The paper
+does not state $\theta(s)$; its companion paper \cite{snn} (Fig.~4) prints
+$\CRX(1.369)$ for the value $0.4$ and $\CRX(1.7722)$ for $0.6$, which pins
+\begin{equation}
+\theta(s) = 2\arcsin\sqrt{s}, \qquad\text{so that } P(\text{qubit reads } 1) = s .
+\label{eq:encoding}
+\end{equation}
+We use \cref{eq:encoding} throughout and report the alternative $\theta = \pi s$ as an ablation
+where it matters (ECG, \cref{sec:ecg}).
+
+\paragraph{Networks and their output.}
+A network has $n_{\mathrm{in}}$ input qubits, $n_{\mathrm{hid}}$ hidden qubits (one per hidden
+neuron) and one output qubit; $n = n_{\mathrm{in}}+n_{\mathrm{hid}}+1$.  Its output for a given
+input is the \emph{activation}
+\begin{equation}
+\Pout \;=\; \Pr[\text{output qubit reads }1],
+\end{equation}
+a number in $[0,1]$.  For a classifier it is thresholded (Flappy: flap iff $\Pout>\tfrac12$);
+for a regressor it is the predicted value (ECG: the denoised sample).
+
+\paragraph{The superposition observable and the training loss.}
+For the bit-count and Iris tasks the inputs are prepared in superposition and the measured joint
+distribution of (input string $x$, output bit) is read.  The \emph{model distribution} is
+\begin{equation}
+q(x) \;=\; \frac{P(\text{inputs}=x,\ \mathrm{out}=1)}{\sum_{x'} P(\text{inputs}=x',\ \mathrm{out}=1)},
+\label{eq:model-distribution}
+\end{equation}
+i.e.\ the input distribution \emph{conditioned on the output having fired} --- the output
+amplitude acts as a weight on each input pattern (paper, Fig.~4 caption).  It is compared to a
+target distribution $p(x)$ by the Kullback--Leibler divergence (paper, Eq.~(4)),
+\begin{equation}
+\KL(p\,\|\,q) \;=\; \sum_x p(x)\,\log\frac{p(x)}{q(x)} \;\ge 0,
+\qquad \KL = 0 \iff p = q,
+\label{eq:kl}
+\end{equation}
+with $0\log 0 = 0$ and $q$ floored at $10^{-12}$ so the value stays finite (our choice; the paper
+does not say).  A second dissimilarity we use for noise is the \emph{total-variation distance}
+$\TV(p,q) = \tfrac12\sum_x |p(x)-q(x)| \in [0,1]$, the largest difference in probability that any
+event can have under the two distributions.
+
+\paragraph{Noise channels.}
+Real gates are not unitary.  A \emph{channel} is a linear map $\rho\mapsto\sum_i K_i\rho K_i^\dagger$
+with $\sum_i K_i^\dagger K_i = I$ (the $K_i$ are its \emph{Kraus operators}); it sends density
+matrices to density matrices.  Three channels describe a calibrated machine:
+\begin{itemize}[nosep]
+\item \emph{Depolarising} with probability $p$: with probability $1-p$ nothing happens, with
+probability $p$ the state of the affected qubit(s) is replaced by the maximally mixed state.  A
+vendor's ``average gate error'' $\varepsilon$ is converted to $p$ by
+$\varepsilon = p\,(1 - 2^{-k})\,\tfrac{2^k}{2^k+1}$ for a $k$-qubit gate ($p = 2\varepsilon$ for
+one qubit, $p = \tfrac{4}{3}\cdot\tfrac{5}{4}\varepsilon$ for two), which makes the channel's
+average fidelity equal to $1-\varepsilon$ (cross-checked against Qiskit~Aer).
+\item \emph{Relaxation} over a time $t$ with the vendor's $T_1$ (energy decay time) and $T_2$
+(phase decay time): $\ket{1}$ decays toward $\ket{0}$ with probability $1-e^{-t/T_1}$ and
+superpositions lose coherence by $e^{-t/T_2}$.  It is applied during every gate (for its
+duration) and during every idle interval, which we schedule as early as possible, exactly as
+IBM's compiler does.
+\item \emph{Readout confusion}: the recorded bit differs from the true one with probability
+$p_{01}$ (true $0$ read as $1$) or $p_{10}$ (true $1$ read as $0$).
+\end{itemize}
+The resulting \emph{noise model} of a machine is the rule ``after each gate, apply the gate's
+depolarising channel and its relaxation; on every idle qubit, apply relaxation for the idle time;
+at the end, apply readout confusion''.  Its parameters come from the vendor data of
+\cref{app:provenance}; a \emph{noise scale} $s$ multiplies all of $p$, $1/T_1$, $1/T_2$ and the
+readout errors together ($s=1$ is the published machine, $s=0$ is noiseless).
+
+\paragraph{Shots.}
+A quantum computer does not return probabilities; it returns one bit string per run, and
+probabilities are estimated by repeating the circuit $N$ times (\emph{$N$ shots}).  An estimate
+$\hat p = k/N$ of a probability $p$ has standard deviation $\sqrt{p(1-p)/N}\le 1/(2\sqrt N)$.  We
+call $\delta = |\Pout - \tfrac12|$ the \emph{decision margin} of a thresholded output: a frame
+decided from $N$ shots is decided wrongly with probability $\approx\Phi(-2\delta\sqrt N)$, where
+$\Phi$ is the standard normal distribution function.
+
+\paragraph{Fidelity.}
+For a compiled circuit on a given machine we quote the estimate
+\begin{equation}
+F \;\approx\; \prod_{\text{2q gates}}(1-\varepsilon_{2})\;\prod_{\text{1q gates}}(1-\varepsilon_{1})\;
+\prod_{\text{qubits}} F_{\mathrm{idle}}(t)\;\prod_{\text{qubits}}\bigl(1-\tfrac{p_{01}+p_{10}}{2}\bigr),
+\label{eq:fidelity}
+\end{equation}
+the probability that no error at all occurred in the run, with
+$F_{\mathrm{idle}}(t) = \tfrac12 + \tfrac16\bigl(2e^{-t/T_2}+e^{-t/T_1}\bigr)$ the average
+fidelity of relaxation over the circuit's duration $t$ \cite{nielsen}.  It is a first-order
+bookkeeping estimate, not a simulation; the simulations are reported next to it.
+
+\paragraph{Abbreviations.}
+KW--SA: the paper's optimiser (\cref{sec:kwsa}).  PSNR: peak signal-to-noise ratio,
+$10\log_{10}(R^2/\mathrm{MSE})$ with $R$ the signal range and MSE the mean squared error, in
+decibels (dB).  SSIM: structural similarity index \cite{wang}, a number in $[0,1]$ comparing
+local means, variances and covariance of two signals.  SWAP: the gate that exchanges two qubits,
+inserted by a compiler when a two-qubit gate is requested between qubits that are not physically
+connected; it costs three native two-qubit gates.

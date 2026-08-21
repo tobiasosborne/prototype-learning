@@ -1,0 +1,59 @@
+\section{What we learned}
+\label{sec:learnings}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+\item \textbf{The paper's central claims reproduce.}  The prototype neuron's activation surface,
+the bit-count histogram and its convergence, the Iris overfitting contrast, perfect Flappy play
+(on our clone) and the ECG denoising numbers (within 2~dB on a different signal) all come out of
+a clean-room implementation.  What does not: the iterative baseline of Fig.~6 (ours stalls at
+$\KL\approx 0.15$) and the weight picture of Fig.~9.  Both are under-specified in the paper.
+
+\item \textbf{Reading figures is part of reproduction.}  The bit-count target
+($(\text{ones}+1)/112$), the Iris label weighting ($(\ell+1)^2$) and the angle encoding
+($\theta = 2\arcsin\sqrt s$, from a printed gate angle in the companion paper) all had to be
+read off figures; each was then confirmed to the figure's precision.  Where a figure was
+over-read --- the Iris split ratio ``justified'' by bar counts --- an independent review caught
+it and the justification was withdrawn (\cref{sec:iris}).
+
+\item \textbf{The prototype network's advantage under noise is inherited, not intrinsic.}
+Prototype and classic networks have the same two-qubit gate count and the noise displaces both
+by the same amount; the prototype wins under noise because it fits better without noise.
+
+\item \textbf{Gate noise at published levels is not the obstacle for these networks; shots
+are.}  Every 7--11-qubit network survives every vendor's calibrated noise model with a
+qualitatively intact result.  The Flappy controller needs $10^4$ shots per frame with a fixed
+budget; the bit-count loss is biased by $31.8/N$.  The one remedy that pays now is a sequential
+measurement rule ($4.6\times$ fewer shots, no retraining); margin-aware training does not work
+for a 17-parameter network; common random numbers help the optimiser but not the estimator.
+
+\item \textbf{Compiled circuits are $5$--$15\times$ more noise-sensitive than logical ones.}
+Two native gates per controlled rotation, resynthesised single-qubit gates and routing on a
+lattice all cost; a complete-bipartite network is the worst case for a lattice, and the vendor's
+own compiler must be used for any superconducting submission.  Trapped ions are the natural home
+of this architecture; their price is circuit time (milliseconds per shot).
+
+\item \textbf{An optimiser that keeps a stale incumbent turns a harmless change into a
+negative result.}  The ``rotating seeds break training'' finding of the first session was an
+artefact of comparing losses measured on different episode batches; re-scoring the incumbent
+restores $25/25$ perfect games.  Any non-stationary objective (mini-batches, hardware drift) needs
+this.
+
+\item \textbf{Penalties must be priced in the currency of the reward.}  A margin hinge that
+could outweigh the per-frame survival reward produced a confidently dead controller; the
+per-frame form below the per-frame reward cannot.  The same arithmetic applies to any shaping
+term.
+
+\item \textbf{Provenance has to be mechanical.}  The first hardware plan contained a dozen
+wrong numbers --- a state-preparation gate count off by a factor of two, a sentence with its
+inequality reversed, costs computed by hand.  The fix was a script that emits every number and
+refuses to run if any calibration input lacks a source; the report now quotes only that script.
+\end{enumerate}
+
+\paragraph{Not done, and why.}
+Noise-aware training of the 11-qubit bit-count network (13 hours for its grid) and the full
+ECG/Iris noise grids (4--8 hours) exceeded the session's compute ceiling and were not run;
+their per-cell costs are recorded so that a future session can decide.  Items 4--6 of the
+shot-noise programme --- a loss that uses all shots, bias-corrected estimators, and amplitude
+estimation --- are designed but not implemented; item 4 is the natural next step, since the
+estimator bias is what now limits sampled training.  Nothing has been submitted to a quantum
+computer; the plan of \cref{sec:recommendation} is ready to be.

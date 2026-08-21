@@ -631,7 +631,7 @@ def fig_ecg_iris_noise() -> None:
     keys = [c["key"] for c in A["cells"]]
     fig, axes = plt.subplots(1, 2, figsize=(6.8, 2.9))
     ax = axes[0]
-    labels = [f"{c['kind']}\n{c['n_hidden']} hidden" for c in A["cells"]]
+    labels = [f"{'C' if c['kind'] == 'classic' else 'P'}{c['n_hidden']}" for c in A["cells"]]
     xs = np.arange(len(keys))
     ax.bar(
         xs - 0.27, [A["clean"][k]["psnr"] for k in keys], width=0.26, color=PAPER, label="noiseless"
@@ -640,7 +640,8 @@ def fig_ecg_iris_noise() -> None:
         vals = [A["per_device"][k][d]["psnr"] for k in keys]
         ax.bar(xs + j * 0.27, vals, width=0.26, color=DEVICE_COLOR[d], label=DEVICE_LABEL[d])
     ax.set_xticks(xs)
-    ax.set_xticklabels(labels, fontsize=6.5)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("C = classic, P = prototype; digit = hidden neurons")
     ax.set_ylim(30, 45)
     ax.set_ylabel("PSNR (dB) on an 8-window block")
     ax.legend(loc="upper left", fontsize=6.5)
@@ -906,7 +907,7 @@ def fig_flappy_shots_programme() -> None:
         if x["label"] not in labels:
             labels.append(x["label"])
     colors = dict(zip(labels, [VIOLET, AQUA, BLUE, GREEN, ORANGE], strict=False))
-    fig, axes = plt.subplots(1, 3, figsize=(9.0, 2.9))
+    fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.0))
     qs = ["0.01", "0.1", "0.25", "0.5", "0.75", "0.9"]
     ax = axes[0]
     for lab in labels:
@@ -922,7 +923,7 @@ def fig_flappy_shots_programme() -> None:
     ax.set_xlabel("quantile of played frames")
     ax.set_ylabel("decision margin δ")
     ax.legend(fontsize=6.5)
-    ax.set_title("margins before / after margin-aware training", loc="left")
+    ax.set_title("decision margins", loc="left")
     ax = axes[1]
     for lab in labels:
         fixed = sorted(
@@ -949,9 +950,9 @@ def fig_flappy_shots_programme() -> None:
         )
     ax.set_xscale("log")
     pct(ax)
-    ax.set_xlabel("shots per frame (stars: sequential test, mean)")
+    ax.set_xlabel("shots per frame (stars: sequential test)")
     ax.set_ylabel("perfect games")
-    ax.set_title("play quality vs shot budget", loc="left")
+    ax.set_title("play quality vs budget", loc="left")
     ax = axes[2]
     for lab in labels:
         sprt = [y for y in rows if y["label"] == lab and y["sprt"] is not None]
@@ -965,9 +966,10 @@ def fig_flappy_shots_programme() -> None:
         )
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("sequential-test indifference margin δ₀ (small: cap 4 000, large: cap 10 000)")
+    ax.set_xlabel("indifference margin δ₀ (small dot: cap 4 000, large: 10 000)")
     ax.set_ylabel("mean shots per frame")
-    ax.set_title("cost of the sequential test", loc="left")
+    ax.set_title("sequential-test cost", loc="left")
+    fig.tight_layout()
     save(fig, "fig_flappy_shots_programme")
 
 

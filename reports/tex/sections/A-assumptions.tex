@@ -1,0 +1,48 @@
+\section{Choices the paper leaves open}
+\label{app:assumptions}
+
+Each entry is marked \code{[ASSUMPTION]} at the place in the code where it enters.
+
+\begin{description}[leftmargin=1.2em,style=nextline,itemsep=2pt]
+\item[Optimiser schedule (\cref{sec:kwsa}).]  Step sizes $a_n = a_0/(n+1)^{0.602}$,
+difference step $c_n = c_0/(n+1)^{0.101}$, geometric cooling; one iteration is a coordinate
+sweep.  Bit-count: $a_0 = 20$, $c_0 = 0.2$, $T_0 = 0.02$, cooling $0.7$, 20 sweeps.  Flappy:
+$a_0 = 0.4$, $c_0 = 0.25$, $T_0 = 0.05$, cooling $0.9$, 25 sweeps after 300 random restarts.
+Iris: $a_0 = 2$, decay exponent $0.3$, $c_0 = 0.1$, 40 sweeps.  ECG: 100 sweeps with restarts.
+\item[Iterative baseline (\cref{sec:bitcount}).]  One optimiser sweep on the squared error of one
+random input per iteration; the paper does not describe its scheme.
+\item[Angle encoding (\cref{eq:encoding}).]  $\theta = 2\arcsin\sqrt s$, pinned by a printed
+angle in \cite{snn}; $\theta = \pi s$ tested as an ablation.
+\item[KL regularisation.]  The model probability is floored at $10^{-12}$ inside the logarithm.
+\item[Iris (\cref{sec:iris}).]  Stratified one-third training split; flowers sharing a code are
+merged and their labels averaged; the KL is normalised over all 4\,096 input strings (restricting
+it to the dataset's codes lets the network exploit interference between examples and reach a
+training loss of $10^{-5}$ while reading out at chance); label weight $\propto(\ell+1)^2$ read
+from Fig.~8; labels predicted by nearest rounding of the read-out weight.
+\item[Flappy (\cref{sec:flappy}).]  Our own clone: 288$\times$512 screen, flap impulse $-7$, gap
+120, pipe spacing 180, gravity 1 (the classic constants are unplayable by a memoryless two-feature
+policy); reward 0.01 per frame plus 1 per pipe, tracking term $|{\rm height}-{\rm gap}|$ with
+weight 1; 5 training episodes of 1\,500 frames, 20 held-out seeds 5--24, 5\,000-frame cap (110
+pipes); decisions cached on a $65\times65$ grid of observations.
+\item[ECG (\cref{sec:ecg}).]  Synthetic McSharry-form signal tuned to Fig.~13 and MIT-BIH
+record 100; Gaussian noise $\sigma = 0.02$; mirror-padded edges; first half train, second half
+test; PSNR with $R = $ range of the clean signal; SSIM in a 7-sample sliding window.
+\item[Noise model (\cref{sec:devices}).]  Depolarising at the vendor's average gate error,
+relaxation during gates and as-soon-as-possible idling, readout confusion; median values where
+vendors publish per-qubit tables; no crosstalk (no vendor publishes a usable number); where a
+vendor publishes nothing for a channel it is modelled as error-free and flagged.  Quantinuum's
+idle error is charged as $(1-m)^{n_{\rm qubits}\cdot{\rm depth}}$ from its memory error per
+depth-1 time; IQM's and Rigetti's unpublished one-qubit gate durations are set to 40\,ns.
+\item[Fidelity estimate (\cref{eq:fidelity}).]  First-order product of per-gate survival
+probabilities; readout factor $(1-(p_{01}+p_{10})/2)^n$.
+\item[Costs (\cref{sec:cost}).]  IBM \$1.60 per QPU second (2022 launch figure, corroborated by
+a secondary \$96/min report) plus 30\,s per-job overhead; Quantinuum \$12.5 per credit (Azure
+Standard plan divided by its allotment); Braket and Azure per-shot prices as retrieved on
+20 August 2026; Quantinuum's credit formula with $N_m = 2\times$ qubits.
+\item[State preparation (\cref{sec:recommendation}).]  Dense counts $2^{n+1}-2n-2$ \cite{sbm} and
+$\approx\tfrac{23}{24}2^n$ \cite{plesch}; sparse leading term $k\cdot n$ with $k=120$ training
+flowers \cite{gleinig}.
+\item[Shot-noise programme (\cref{sec:shots}).]  Margin penalty $w\cdot 0.01\cdot\max(0,1-\delta/m)$
+per frame with $m=0.1$; sequential test with $\alpha=\beta=0.05$, blocks of 20 shots; common
+random numbers by maximal coupling to the first probe of each coordinate.
+\end{description}

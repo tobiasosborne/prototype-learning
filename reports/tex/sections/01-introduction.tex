@@ -1,0 +1,69 @@
+\section{Introduction}
+\label{sec:intro}
+
+\paragraph{What the paper proposes.}
+A quantum neural network is a small quantum circuit whose rotation angles are treated as
+trainable weights; the network's output is the probability of measuring one designated qubit in
+the state $\ket{1}$.  Rosenhahn and Hirche \cite{ptqnn} propose a particular building block,
+the \emph{prototype neuron}, in which each input qubit is first rotated by a learned angle, then
+used to control a rotation of the neuron's own qubit, and finally rotated back
+(\cref{fig:circuits}).  The effect is that the neuron ``fires'' most strongly when the input
+pattern matches a stored prototype pattern, and the fact that the inputs are rotated back means
+the same inputs can be shared by many neurons and by many training examples \emph{in
+superposition}.  The paper demonstrates this on four tasks: learning a target histogram over all
+32 five-bit strings at once (bit-count), classifying the Iris flowers, controlling a Flappy Bird
+game, and denoising an electrocardiogram (ECG).  Training uses no gradient descent; it uses a
+finite-difference estimate of the slope inside a simulated-annealing loop (\cref{sec:kwsa}).
+
+\paragraph{What we did.}
+This document records three things.  First, a \textbf{reproduction}: a clean-room implementation
+(no code from the authors), cross-checked against an independent simulator written blind by a
+second agent, that regenerates every figure and table of the paper that can be regenerated from
+its text (\cref{sec:reproduction}).  Second, a \textbf{noise study}: a description of the seven
+quantum computers for which vendors publish calibration data, as mathematical noise channels, and
+an exact simulation of each experiment under each of them (\cref{sec:noise}), plus a
+\textbf{compilation and cost study} of what it would take to run the circuits on each machine
+(\cref{sec:hardware}).  Third, a \textbf{shot-noise programme}: having found that the number of
+repeated measurements, not gate error, is what limits a hardware demonstration, we implement and
+test three remedies (\cref{sec:shots}).
+
+\paragraph{How to read the numbers.}
+Every quantitative statement below comes from a \emph{run directory} --- a folder under
+\code{experiments/runs/} holding the script's output together with the random seed, the commit
+hash of the code and the simulator backend that produced it.  Run directories are named by
+time stamp (for example \run{bitcount\_noise/20260820T145335Z}) and are quoted in the text; the
+figures are produced from them by one script (\code{experiments/report\_figures.py}).  Where the
+paper leaves a choice open (its optimiser step sizes, its train/test split, its game physics) we
+had to choose, and each such choice is listed in \cref{app:assumptions}.  Every calibration
+number of a quantum computer carries, in the repository, the URL it was read from, the date, and
+a verbatim quotation (\cref{app:provenance}).
+
+\paragraph{Compute discipline.}
+All simulations were run on one workstation (64 cores, one RTX~3090 GPU).  No single run was
+allowed to exceed about two hours; two studies that would have (noise-aware training of the
+11-qubit bit-count network, $\approx 13$ hours for its grid; the full ECG/Iris noise grid,
+$\approx 8$ hours) were deliberately \emph{not} run and are reported as such, with their measured
+per-cell cost, rather than approximated.
+
+\begin{table}[t]
+\centering\small
+\caption{Scoreboard: what the paper reports and what we obtain.  ``Reproduced'' means the
+qualitative claim and the quantitative value (within the precision the paper's figure allows)
+both come out; ``discrepancy'' means they do not, and the text explains what we tried.}
+\label{tab:scoreboard}
+\begin{tabularx}{\textwidth}{@{}l l X l@{}}
+\toprule
+Paper item & Paper value & Ours & Status \\
+\midrule
+Fig.~3, activation surface & $(0,1)\!\to\!\max$, $(1,0)\!\to\!0$ & $1.000$ / $0.000$ / $0.500$ / $0.500$ at the corners & reproduced \\
+Fig.~5, target histogram & bar heights & $(\text{number of ones}+1)/112$, all 32 bars within $0.0002$ & reproduced \\
+Fig.~6, superposition training & $\KL\approx 0$ in $\approx 8$ iterations & median $<0.005$ at sweep 9; $5/6$ seeds $<10^{-3}$ at 20 & reproduced \\
+Fig.~6, iterative baseline & $\KL\approx 0$ by $\approx 120$ & stalls at $\approx 0.15$ after 200 (our construction) & discrepancy \\
+Fig.~7, Iris learning curves & classic overfits, prototype does not & classic test loss rises after 1--4 sweeps; prototype's falls monotonically & reproduced \\
+Iris accuracy & $\approx 98\,\%$ & $95$ / $91$ / $98\,\%$ on three splits (ceilings $97$ / $99$ / $99\,\%$) & in range \\
+Fig.~9, Iris weight picture & prototype weights span the data & both weight sets cluster away from the data & discrepancy \\
+Flappy Bird & ``plays perfectly'' & $110/110$ pipes (the cap) on $20/20$ held-out games & reproduced (own clone) \\
+Table~I, ECG PSNR (1/2/3 hidden) & $32.9$ / $40.00$ / $40.04$~dB & $37.4$ / $38.0$ / $38.1$~dB (synthetic signal) & within $\approx 2$~dB \\
+\bottomrule
+\end{tabularx}
+\end{table}
