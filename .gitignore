@@ -5,7 +5,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
-literature/pdf/        # copyrighted PDFs stay local (ground-truth distillations live in docs/physics/)
+# copyrighted PDFs stay local (ground-truth distillations live in docs/physics/)
+literature/pdf/
 literature/*.txt
 data/raw/
 experiments/runs/
