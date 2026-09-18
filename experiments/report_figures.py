@@ -40,6 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "reports/tex/figures"
 RUNS = {
     "bitcount": ROOT / "experiments/runs/bitcount/20260820T135930Z",
+    "bitcount_iterative": ROOT / "experiments/runs/bitcount/20260918T111515Z",
     "bitcount_noise": ROOT / "experiments/runs/bitcount_noise/20260820T145335Z",
     "bitcount_shots": ROOT / "experiments/runs/bitcount_shots/20260821T084558Z",
     "flappy": ROOT / "experiments/runs/flappy/20260820T143753Z",
@@ -198,31 +199,30 @@ def fig_bitcount_histograms() -> None:
 
 
 def fig_bitcount_convergence() -> None:
-    """Fig 6: KL vs training sweep, superposition vs our iterative baseline, 6 seeds."""
-    h = load(RUNS["bitcount"] / "histories.json")
+    """Fig 6: superposition training (left, per sweep) and the sample-wise baseline graded in its
+    own observable (right, per elementary KW step; the Eq. 4 KL of the same networks dashed)."""
+    h_sup = load(RUNS["bitcount"] / "histories.json")
+    h_itr = load(RUNS["bitcount_iterative"] / "histories.json")
+    n_sup = len(h_sup["superposition"])
+    itr = np.array([v for v in h_itr["iterative"].values()])  # (seeds, n_points)
+    itr_sup = np.array([v for v in h_itr["iterative_superposition"].values()])
+    n_itr = itr.shape[0]
+    total = int(load(RUNS["bitcount_iterative"] / "meta.json").get("iterative_iterations", 100_000))
+    step = total // (itr.shape[1] - 1)
+    x = np.arange(itr.shape[1]) * step
+    x[0] = max(step // 10, 1)  # log axis: the start value sits just left of the first monitor point
+
     fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.8), sharey=True)
-    for ax, key, color, title in (
-        (axes[0], "superposition", PROTO, "superposition training"),
-        (axes[1], "iterative", ORANGE, "iterative (one input per step) — our construction"),
-    ):
-        for hist in h[key].values():
-            ax.plot(hist, color=color, alpha=0.55, lw=1.1)
-        med = np.median(np.array(list(h[key].values())), axis=0)
-        ax.plot(med, color=INK, lw=1.8, label="median of 6 seeds")
-        ax.set_yscale("log")
-        ax.set_xlabel("sweep")
-        ax.set_title(title)
-        ax.axhline(5e-3, color=GRID, lw=1)
-    axes[0].set_ylabel("KL(target ‖ model)")
-    fig.text(
-        0.5,
-        -0.02,
-        "one sweep = 3 × 36 circuit evaluations (6 optimiser seeds per panel)",
-        ha="center",
-        fontsize=7.5,
-        color=INK2,
-    )
-    axes[0].annotate(
+    ax = axes[0]
+    for hist in h_sup["superposition"].values():
+        ax.plot(hist, color=PROTO, alpha=0.55, lw=1.1)
+    med = np.median(np.array(list(h_sup["superposition"].values())), axis=0)
+    ax.plot(med, color=INK, lw=1.8, label=f"median of {n_sup} seeds")
+    ax.set_yscale("log")
+    ax.set_xlabel("sweep")
+    ax.set_title("superposition training")
+    ax.axhline(5e-3, color=GRID, lw=1)
+    ax.annotate(
         "paper: ≈0 after ~8 iterations",
         (9, 5e-3),
         xytext=(10.5, 2.5e-2),
@@ -230,15 +230,44 @@ def fig_bitcount_convergence() -> None:
         color=INK2,
         arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.7},
     )
-    axes[1].annotate(
-        "paper: ≈0 after ~120 iterations; ours stalls ≈0.15",
-        (120, 0.15),
-        xytext=(60, 0.6),
+    ax.legend(loc="lower left")
+
+    ax = axes[1]
+    for row in itr:
+        ax.plot(x, row, color=ORANGE, alpha=0.55, lw=1.1)
+    ax.plot(x, np.median(itr, axis=0), color=INK, lw=1.8, label=f"per-input KL, median of {n_itr}")
+    ax.plot(
+        x,
+        np.median(itr_sup, axis=0),
+        color=INK2,
+        lw=1.0,
+        ls="--",
+        label="Eq. 4 KL of the same network",
+    )
+    ax.set_xscale("log")
+    ax.set_xlim(x[0], x[-1])
+    ax.axhline(1e-3, color=GRID, lw=1)
+    ax.set_xlabel("iteration (one KW step on one input)")
+    ax.set_title("iterative baseline, per-input observable")
+    ax.annotate(
+        "paper: ≈1e-3 after ~120 iterations (unit unstated)",
+        (x[1], 1e-3),
+        xytext=(x[0] * 1.1, 2.8e-4),
         fontsize=7.5,
         color=INK2,
         arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.7},
     )
-    axes[0].legend(loc="lower left")
+    ax.legend(loc="upper right", fontsize=7)
+    axes[0].set_ylabel("KL(target ‖ model)")
+    fig.text(
+        0.5,
+        -0.06,
+        f"left: 1 sweep = 108 evaluations, {n_sup} seeds.  right: 1 iteration = 3 evaluations, "
+        f"{n_itr} seeds; KL over the 32 per-input activations",
+        ha="center",
+        fontsize=7.5,
+        color=INK2,
+    )
     save(fig, "fig_bitcount_convergence")
 
 
