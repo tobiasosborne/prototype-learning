@@ -41,7 +41,9 @@ close (see `reviews/004-inbox.md` if present). Queue: `HANDOFF.md`.
   0 errors (one pre-existing overfull hbox in the fidelity display).
 - Every number in the report was re-derived by the writing agent from the run files and
   spot-checked here (E2 crossings 12k/23k/73k; ECG 33.97/36.33/38.02, 36.80/37.48/36.86).
-- NOT verified: Codex review 004 (running at close); the ≥20-seed Iris sweep (one seed only).
+- Codex review 004 filed (`reviews/004-inbox.md`): 3 blockers, 9 majors; physics of the observable
+  mismatch confirmed by an independent 2-qubit derivation. LaTeX findings fixed the same day;
+  code findings open (pi-06 hung 3 h with no edits, killed). ≥20-seed Iris sweep not run.
 
 ## Gotchas for future agents
 - The prototype block RX(φ)·CRX·RX(−φ) does NOT restore the input register, so the Eq. 4

@@ -87,20 +87,20 @@ Brief: `notes/briefs/codex-04-session4-review.md`; events `experiments/runs/code
 
 Reject pending correction of the run accounting and report provenance. The central observable physics is correct: for input `|0⟩`, writing \(p=\sin^2\phi\,\sin^2(\theta/4)\) and \(r=\sin\phi\cos\phi\,\sin^2(\theta/4)\), the reduced input state after `RX(φ)–CRX(θ)–RX(−φ)` is \(\begin{pmatrix}1-p&-ir\\ir&p\end{pmatrix}\); for `|1⟩` the diagonal entries swap and the off-diagonal sign reverses, so the input is not generally restored. `basis_prep`, target-first KL, the nonzero activation distribution, `probe_candidates=False`, schedule keying, and the legacy default KWSA path check out; the ECG loader preserves the mailed arrays, measures sigma, handles `None`, and records correct digests. Focused non-slow bit-count/train, ECG, and selected Iris tests passed. No repository files were modified.
 
-## Resolution table (session 4, same day)
+## Resolution table (session 4, same day; pi-06 hung after 3 h with no edits — every item marked "(pi-06)" is OPEN, brief `notes/briefs/pi-06-review-004-code.md`)
 
 | # | Finding | Resolution |
 |---|---|---|
-| B1 | "three evaluations per iteration" is four (incumbent re-scored per outer call) | **Fixed** in 04-reproduction, A-assumptions, app-agentic ("four objective evaluations", factor 27); figure footer via pi-06 |
-| B2 | `final_kl`/results.md report the minimum; "0.07–0.4 throughout" false | **Fixed**: text now states range 0.035–0.58 with endpoints 0.07–0.4; `bitcount_figs.py` records `iterative_final` and `best` separately (pi-06). Archived `meta.json` of 20260918T111515Z keeps the old field; worklog gotcha notes it |
-| B3 | negative `wall_seconds`; "103 min on six cores" unsupported; "ECG 100 sweeps" vs run's 40 | **Fixed**: `perf_counter` + `processes`/`hostname`/`platform` in meta (pi-06); prose drops the minutes, says "six worker processes on the laptop"; assumptions say 40 sweeps per restart, 8 restarts (August run's count to be confirmed on the workstation — HANDOFF) |
-| M1 | dead per-basis model gets uniform instead of the epsilon penalty | **Fixed** (zeros; pi-06) |
-| M2 | off-cadence final monitor point mis-plotted | **Fixed** (`monitor_x`, last point at `iterations`; pi-06) |
-| M3 | drop policy filters the test set by its own labels (97.6 % on 82 vs 95.0 % on 100) | **Partly fixed**: both accuracies now reported; the policy itself is the co-author's ("removed binary patterns assigned to two classes") and stays as an `[ASSUMPTION]` with the unfiltered number beside it; A-assumptions entry added (below) |
-| M4 | firing factorisation tested only on marginals | **Fixed**: full hidden-register density matrix vs reference partial trace, prototype and classic (pi-06) |
-| M5 | all-zero drive → nothing dead | **Fixed** (pi-06) |
-| M6 | 200 null draws < the 1000-sample rule | **Fixed**: default 1000, test ≥ 1000; the −drop run rescored with 1000 draws |
-| M7 | `--rescore` provenance | **Fixed**: reads/validates `meta.json` when present, records origin of each value, hostname, wall time (pi-06). The 20260918T085641Z-drop run has no training meta (crashed before the fix) — stated in its `meta-rescore.json` |
-| M8 | unarchived diagnostic numbers (0.05, 1.3 %, 0.03–0.09) | **Fixed**: removed from both texts; replaced by the archived dashed series; params now saved per seed for future diagnostics (pi-06) |
-| M9 | Fig 6 caption vs generator | **Fixed**: generator reads the September run for both panels until the workstation regenerates (TODO in code + HANDOFF) |
-| m1–m3 | docstring sign, range validation, "full pass" wording | **Fixed** (pi-06) |
+| B1 | "three evaluations per iteration" is four (incumbent re-scored per outer call) | **Fixed** in 04-reproduction, A-assumptions, app-agentic ("four objective evaluations", factor 27); **open**: figure footer still says 3 evaluations (report_figures.py) |
+| B2 | `final_kl`/results.md report the minimum; "0.07–0.4 throughout" false | **Fixed**: text now states range 0.035–0.58 with endpoints 0.07–0.4; **open** (pi-06): `bitcount_figs.py` still records the minimum as `final_kl`. Archived `meta.json` of 20260918T111515Z keeps the old field; worklog gotcha notes it |
+| B3 | negative `wall_seconds`; "103 min on six cores" unsupported; "ECG 100 sweeps" vs run's 40 | Text **fixed**; code **open** (pi-06: `perf_counter`, `processes`/`hostname`/`platform` in meta); prose drops the minutes, says "six worker processes on the laptop"; assumptions say 40 sweeps per restart, 8 restarts (August run's count to be confirmed on the workstation — HANDOFF) |
+| M1 | dead per-basis model gets uniform instead of the epsilon penalty | **open** (pi-06) |
+| M2 | off-cadence final monitor point mis-plotted | **open** (pi-06) |
+| M3 | drop policy filters the test set by its own labels (97.6 % on 82 vs 95.0 % on 100) | **Partly fixed**: assumption entry written; reporting both accuracies is **open** (pi-06); the policy itself is the co-author's ("removed binary patterns assigned to two classes") and stays as an `[ASSUMPTION]` with the unfiltered number beside it; A-assumptions entry added (below) |
+| M4 | firing factorisation tested only on marginals | **open** (pi-06) |
+| M5 | all-zero drive → nothing dead | **open** (pi-06) |
+| M6 | 200 null draws < the 1000-sample rule | **open** (pi-06): default still 200; rescore with 1000 draws pending |
+| M7 | `--rescore` provenance | **open** (pi-06). The 20260918T085641Z-drop run has no training meta (crashed before the fix) — stated in its `meta-rescore.json` |
+| M8 | unarchived diagnostic numbers (0.05, 1.3 %, 0.03–0.09) | Text **fixed** (numbers removed, archived series cited); saving params per seed **open** (pi-06) |
+| M9 | Fig 6 caption vs generator | **open** (pi-06): generator still reads the August run for the left panel; the committed PNG is the September smoke-test version, captions describe the PNG |
+| m1–m3 | docstring sign, range validation, "full pass" wording | **open** (pi-06) |

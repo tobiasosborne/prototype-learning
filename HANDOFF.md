@@ -6,9 +6,13 @@ entry. Deliverables now: `reports/tex/overleaf/` (drop-in for the co-author's Ov
 `notes/reply-to-bodo-draft.md` (e-mail; fill [SLOTS]), `reports/tex/main.pdf` (30 pp).
 
 ## Open at close
-* Codex review 004 (`experiments/runs/codex/004-events.jsonl`, brief
-  `notes/briefs/codex-04-session4-review.md`): if `reviews/004-inbox.md` does not exist, extract
-  the last `agent_message` from the JSONL, file it, fix or decline each finding there.
+* Codex review 004 is filed in `reviews/004-inbox.md` with a resolution table. The LaTeX
+  findings are fixed and committed. The CODE findings (B2, B3-code, M1, M2, M4–M7, M9, m1–m3,
+  and the "3 evaluations" figure footer) are OPEN: the pi-06 run on them hung for 3 h with no
+  edits and was killed. Rerun `notes/briefs/pi-06-review-004-code.md` (split it in two if a
+  single pi run hangs again: bitcount/kwsa/ecg items, then iris items), verify, then rescore
+  `experiments/runs/iris/20260918T085641Z-drop` with 1000 null draws and refresh the Iris
+  numbers in STATE.md and `notes/reply-to-bodo-draft.md`.
 * Authorship: settled — acknowledgement only (Tobias, 2026-09-18). Do not reopen.
 * GitHub visibility for the `\repourl` link: not checked (`gh repo view --json visibility`).
 
