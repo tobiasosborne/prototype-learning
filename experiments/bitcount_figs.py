@@ -189,7 +189,8 @@ def plot_fig6(results: list[dict[str, Any]], out_path: Path) -> tuple[np.ndarray
     itr_med, itr_lo, itr_hi = np.median(itr, axis=0), itr.min(axis=0), itr.max(axis=0)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    x_itr = np.arange(itr.shape[1])
+    # history index i ↔ iteration i·monitor_every (the monitor is subsampled for long runs)
+    x_itr = np.arange(itr.shape[1]) * int(results[0].get("iterative_monitor_every", 1))
     x_sup = np.arange(sup.shape[1])
     ax.fill_between(x_itr, itr_lo, itr_hi, color="red", alpha=0.2, linewidth=0)
     mon = results[0]["iterative_monitor"]
@@ -198,7 +199,7 @@ def plot_fig6(results: list[dict[str, Any]], out_path: Path) -> tuple[np.ndarray
     if extra_key is not None:
         extra = np.array([r["iterative_extra_history"][extra_key] for r in results])
         ax.plot(
-            np.arange(extra.shape[1]),
+            x_itr,
             np.median(extra, axis=0),
             color="red",
             linewidth=1,
@@ -207,6 +208,9 @@ def plot_fig6(results: list[dict[str, Any]], out_path: Path) -> tuple[np.ndarray
         )
     ax.fill_between(x_sup, sup_lo, sup_hi, color="blue", alpha=0.2, linewidth=0)
     ax.plot(x_sup, sup_med, color="blue", linewidth=2, label="Optimization using superposition")
+    if itr.shape[1] > 10 * sup.shape[1]:
+        # 20 superposition sweeps against 1e5 elementary steps: symlog keeps both readable
+        ax.set_xscale("symlog", linthresh=float(sup.shape[1]))
     ax.set_xlabel("# Iterations")
     ax.set_ylabel("KL divergence")
     ax.set_title("Fig 6: convergence (median + min–max band over seeds)")

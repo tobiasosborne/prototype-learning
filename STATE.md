@@ -30,7 +30,7 @@ Updated: 2026-09-18 (session 4, paused; pi edits uncommitted — see HANDOFF.md)
 | Fig 3 activation surface | (0,1)→max, (1,0)→0 | 1.000 / 0.000 / 0.5 / 0.5 | reproduced |
 | Fig 5 target | (popcount+1)/112 | confirmed on all 32 bars ±0.0002 | reproduced |
 | Fig 6 superposition KL | ≈0 in ~8 iters | median <0.005 at 9 sweeps; 5/6 seeds <1e-3 at 20 | reproduced (seed 2 stalls at 0.014) |
-| Fig 6 iterative KL | ≈0 by ~120 iters | ≈0.15 at 200 | discrepancy (our iterative scheme is an assumption) |
+| Fig 6 iterative KL | ≈0 (≈1e-3) by ~120 iters | per-input KL < 1e-3 at 12k / 23k / 73k single-coordinate KW steps (seeds 3/2/1); seed 0 plateaus at 0.02–0.03; the same networks have superposition KL 0.07–0.4 (run bitcount/20260918T111515Z) | reproduced in the per-input observable; the iteration unit is an assumption (the old 0.15 was the superposition KL of a per-input-trained net) |
 | Fig 7 Iris loss curves | prototype generalises | classic test KL rises, prototype monotone | reproduced |
 | Iris accuracy | ≈98 % | 95/91/98 % (ceilings 97/99/99 %) | in range |
 | Fig 9 Iris TSNE | weights span data | not reproduced | discrepancy |
