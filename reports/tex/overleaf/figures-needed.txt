@@ -1,0 +1,22 @@
+# PNGs included by sec-reproducibility.tex and app-agentic.tex.
+# Copy from  reports/tex/figures/<name>  and upload FLAT, next to main.tex.
+# NEW = not in the current Overleaf project zip; the rest are already there.
+
+fig_bitcount_convergence.png       NEW -- must be uploaded
+fig_bitcount_histograms.png        already in the project
+fig_bitcount_noise_aware.png       already in the project
+fig_bitcount_noise_devices.png     already in the project
+fig_ecg_iris_noise.png             already in the project
+fig_ecg_trace.png                  already in the project
+fig_flappy_noise.png               already in the project
+fig_flappy_policy.png              already in the project
+fig_flappy_shot_noise.png          already in the project
+fig_flappy_shots_programme.png     NEW -- must be uploaded
+fig_hardware_entanglers.png        already in the project
+fig_hardware_fidelity.png          already in the project
+fig_iris_losses.png                already in the project
+
+# No longer referenced (safe to leave in the project, or delete):
+#   fig_activation_surface.png  fig_bitcount_noise_scale.png
+#   fig_ecg_table.png           fig_hardware_qpu_time.png
+#   PTAgentComp.png  (replaced by the LaTeX table tab:agentic-scoreboard)

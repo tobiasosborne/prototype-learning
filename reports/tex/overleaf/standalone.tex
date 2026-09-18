@@ -1,0 +1,65 @@
+% ===========================================================================
+%  standalone.tex -- local compile test ONLY.  Do NOT upload this to Overleaf.
+%  It reproduces lines 1-20 of the project's main.tex verbatim, then loads the
+%  additions, so that sec-reproducibility.tex and app-agentic.tex can be
+%  checked in exactly the target document class.
+%    cd reports/tex/overleaf && latexmk -pdf -interaction=nonstopmode standalone.tex
+% ===========================================================================
+
+\documentclass[aps,prx,twocolumn,a4paper]{revtex4-2}
+
+\usepackage{hyperref}
+\usepackage{geometry}                		
+\usepackage{graphicx}				
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{color}
+%\usepackage[ruled,linesnumbered]{algorithm2e}
+%\usepackage{algpseudocode}
+
+\usepackage{ascii}
+\usepackage{tikz}
+\usetikzlibrary{quantikz2}
+\usepackage{adjustbox}
+
+\DeclareMathOperator{\supp}{supp}
+\DeclareMathOperator{\vspan}{span}
+
+\newcommand{\ch}[1] {{\color{olive}CH: [#1]}}
+
+\input{ptqnn-agentic-preamble}
+
+\graphicspath{{../figures/}}   % only for this local build; Overleaf keeps figures flat
+
+\begin{document}
+\title{Standalone build test: agentic reproducibility report}
+\author{Placeholder Author}
+\affiliation{Placeholder affiliation}
+\date{\today}
+\maketitle
+
+\section{Main-text placeholder}
+
+Placeholder text standing in for the body of the paper.  The two figures below
+carry the labels that the reproducibility subsection and the appendix refer to
+in the real document (the optimiser-convergence figure and the t-SNE figure).
+
+\begin{figure}[b]
+\caption{Placeholder for the main text's optimiser-convergence figure.}
+\label{fig:OptConv}
+\end{figure}
+
+\begin{figure}[b]
+\caption{Placeholder for the main text's t-SNE figure.}
+\label{fig:tsne}
+\end{figure}
+
+\input{sec-reproducibility}
+
+\bibliographystyle{apsrev4-2}
+\bibliography{refs}
+
+\appendix
+\input{app-agentic}
+
+\end{document}

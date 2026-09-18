@@ -23,6 +23,23 @@ latexmk notes that bit us: `\ket` is predefined by quantikz (use `\renewcommand`
 cannot sit inside captions; a global caption `width=` breaks side-by-side minipage figures.
 Build artefacts (`.aux`, `.log`, …) are listed in `tex/.gitignore`; `main.pdf` is committed.
 
+## `tex/overleaf/` — the drop-in for Bodo's Overleaf project
+
+`tex/overleaf/` is a self-contained restructuring of this write-up for the PTQNN submission's own
+Overleaf project (revtex4-2, `prx`, twocolumn), which had our sections 04/05/06/08 pasted in
+near-verbatim and broken: our macros and four packages were missing, three labels dangled, and the
+notation, shots, iterative-baseline, Iris-split and appendix material had been dropped.
+It ships `ptqnn-agentic-preamble.tex` (booktabs/tabularx/siunitx, cleveref after hyperref, every
+macro `\providecommand`-guarded, `\SI` handed back to his `ascii` package), `sec-reproducibility.tex`
+(the ~0.6-column main-text subsection, with the scoreboard as a real LaTeX table instead of the
+`PTAgentComp.png` screenshot, and the honest framing: simulators matched to vendor calibration data,
+no hardware runs), `app-agentic.tex` (appendices A–I: notation, the four reproductions, calibrated
+noise, hardware, shots, learnings, assumptions, provenance — every number and run-directory stamp
+kept, 13 of our 23 figures), `figures-needed.txt`, `refs.bib`, `README-for-overleaf.md` and
+`standalone.tex`, which rebuilds his preamble verbatim so the two inputs compile here
+(`cd reports/tex/overleaf && latexmk -pdf standalone.tex`; 15 pp, no errors, no undefined
+references). Nothing in it is used by `tex/main.tex`.
+
 ## Status and discrepancies
 
 The scoreboard lives in `STATE.md`; the open discrepancies are the Fig 6 iterative baseline

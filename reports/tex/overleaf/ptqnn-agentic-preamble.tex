@@ -1,0 +1,42 @@
+% ===========================================================================
+%  Preamble additions required by  sec-reproducibility.tex  and  app-agentic.tex
+%  ---------------------------------------------------------------------------
+%  Paste   \input{ptqnn-agentic-preamble}
+%  into main.tex directly AFTER  \usepackage{adjustbox}.
+%  That position matters: cleveref must be loaded after hyperref (your line 3)
+%  and after amsmath, otherwise it patches the wrong \label.
+%  Everything here is guarded with \providecommand: if you already define one
+%  of these macros, your definition wins and nothing clashes.
+% ===========================================================================
+
+\usepackage{booktabs}   % \toprule \midrule \bottomrule in the appendix tables
+\usepackage{tabularx}   % X columns (tab:agentic-scoreboard, -cost)
+% siunitx and the ascii package both define \SI, and ascii is loaded first, so
+% siunitx would abort with "Command '\SI' already defined".  Hide \SI while
+% siunitx loads and hand it straight back to ascii afterwards; nothing here
+% uses \SI, only the S table column.
+\makeatletter
+\ifx\SI\@undefined\else\let\asciiSI\SI \let\SI\@undefined\fi
+\makeatother
+\usepackage{siunitx}    % S columns (tab:agentic-devices, tab:agentic-sprt)
+\makeatletter
+\ifx\asciiSI\@undefined\else\let\SI\asciiSI\fi
+\makeatother
+\usepackage[capitalise,nameinlink]{cleveref}   % <-- must come after hyperref
+
+\sisetup{detect-all}
+
+% --- notation --------------------------------------------------------------
+\providecommand{\KL}{D_{\mathrm{KL}}}                 % math mode
+\providecommand{\Pout}{P(\mathrm{out}=1)}             % math mode
+\providecommand{\TV}{\mathrm{TV}}                     % math mode
+\providecommand{\RX}{R_X}                             % math mode
+\providecommand{\CRX}{C\!R_X}                         % math mode
+
+% --- text helpers ----------------------------------------------------------
+\providecommand{\code}[1]{\texttt{\small #1}}         % file / module names
+\providecommand{\run}[1]{\texttt{\footnotesize #1}}   % run-directory stamps
+
+% --- the repository --------------------------------------------------------
+% One edit here changes every occurrence in the main text and the appendix.
+\providecommand{\repourl}{\url{https://github.com/tobiasosborne/prototype-learning}}

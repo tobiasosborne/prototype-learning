@@ -1,3 +1,51 @@
+# Session 4 — 2026-09-18 — inbox triage (co-author mails, Overleaf snapshot, real ECG), paused mid-flight
+
+## HANDOFF — state at session close
+Paused after ~1 h on the laptop checkout (12 cores, no GPU, no orkan). Read
+`notes/inbox-2026-09-18.md` first (what the co-author asked for), then `HANDOFF.md` (queue).
+Three pi coding runs were still editing the working tree when the session paused; their edits
+are UNCOMMITTED and UNVERIFIED (see Verification). Next session: diff them against the briefs
+`notes/briefs/pi-01..03`, run the gates, commit or discard per file.
+
+## What was done
+- Triage: mbox (4 mails 2026-08-21…09-07), Overleaf snapshot, racetrack package, ECG .mat files
+  summarised by three Sonnet subagents; digest in `notes/inbox-2026-09-18.md`. The .mat files
+  are staged at `data/raw/ecg-rosenhahn/` (gitignored; SHA256 in the digest).
+- `reports/tex/overleaf/` (Opus): drop-in main-text subsection + restructured appendix +
+  preamble snippet + README for the co-author; compiles standalone (revtex4-2, 15 pp, 0 errors).
+  Scoreboard rows for iterative/Iris/ECG still carry the session-3 numbers.
+- Opus analysis of the Fig 6 iterative baseline (in this entry's Gotchas): the stall at KL≈0.15
+  is an observable mismatch, not a failure of the scheme. Brief `pi-03` implements the fix.
+- `docs/pi.md` (pi conventions), `docs/codex.md` home-path fix, Codex CLI reinstalled (0.155.0).
+- Briefs `notes/briefs/pi-01-ecg-mailed.md`, `pi-02-iris-drop-ambiguous.md`,
+  `pi-03-iterative-baseline.md` launched (deepseek-flash, glm-5.3-flash, deepseek-flash).
+
+## Verification
+- `uv run pytest -m "not slow" -x` at session start: 1 failure, environmental —
+  `tests/test_hardware_plan_script.py::test_stateprep_dense_count_is_shende_bullock_markov`
+  reads `experiments/runs/iris/20260820T144849Z/meta.json`, absent in this checkout.
+- With the pi edits in the tree: `ruff check` and `mypy src` green; `pytest tests/test_ecg.py
+  tests/test_iris.py` was killed by a 300 s timeout while three pi agents ran their own tests.
+  NOT verified. `scripts/check-all.sh` not run at close.
+- Committed here: only files written/read by the main session (notes, docs, briefs,
+  reports/tex/overleaf, reports/README.md). The pi edits to `src/ptqnn/tasks/{ecg,iris}`,
+  `src/ptqnn/train/kwsa.py`, `src/ptqnn/tasks/bitcount.py`, `experiments/*`, `tests/*`,
+  `docs/tasks.md`, `data/README.md` are left uncommitted.
+
+## Gotchas for future agents
+- The prototype block RX(φ)·CRX·RX(−φ) does NOT restore the input register (the un-compute
+  acts on the control the CRX entangled), so P(inputs=x, out=1) ≠ 2⁻ⁿ·P(out=1|x). The
+  superposition KL (Eq 4) and the per-input activation KL are different observables; a network
+  fitted to one is ~0.03–0.09 off in the other. `train_iterative` was graded with the wrong one.
+- `kwsa.minimise` accepts the ±c probes as candidates; fine for the batch objective, a greedy
+  random walk on a one-example objective. `probe_candidates=False` (pi-03) is the fix.
+- Per-iteration cost of the old `train_iterative` is 613 ms (109 evals); "1000× more
+  iterations" as written would be 34 h/seed. With one coordinate per iteration it is 16.7 ms.
+- pi (`-p` mode) prints nothing until it exits; check `git status -s` for progress instead.
+- `backends/batched.py` is a pessimisation at 11 qubits / batch ≤ 32 (per-gate copies).
+
+# (earlier: session 3)
+
 # Session 3 — 2026-08-21 — documentation round
 
 ## HANDOFF — state at session close

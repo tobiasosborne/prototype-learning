@@ -1,6 +1,6 @@
 # STATE — single source of truth
 
-Updated: 2026-08-21 (end of session 3)
+Updated: 2026-09-18 (session 4, paused; pi edits uncommitted — see HANDOFF.md)
 
 ## Phase status (see PLAN.md §3)
 
@@ -20,6 +20,7 @@ Updated: 2026-08-21 (end of session 3)
 | P11 final report | **done** | `reports/tex/main.pdf` (28 pp, 23 figures from `experiments/report_figures.py`); reproduction.md, noise.md, hardware-plan.md |
 | Shot-noise programme | items 1–3 done (1 negative, 2 partial, 3 positive); 4–6 not started | `backends/shots.py`, `kwsa.probe_context`, `flappy.agent.SPRTDecision`, margin objective |
 | Review round 3 | closed: all 9 findings applied (reviews/003-session2.md resolution table) | |
+| Inbox round (session 4) | **in progress** | real ECG source, Iris drop policy, iterative-baseline fix (pi-01..03, uncommitted); `reports/tex/overleaf/` drop-in built; see `notes/inbox-2026-09-18.md` |
 | Docs round (session 3) | **done** | `README.md`, `docs/{architecture,backends,noise,training,tasks,hardware,testing}.md`, READMEs in `experiments/`, `reports/`, `reviews/`, `notes/`, `tests/`, `data/`, `literature/`; no code changed |
 
 ## Reproduction scoreboard (paper value → ours)

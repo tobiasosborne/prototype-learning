@@ -4,7 +4,7 @@ Codex is used for work that benefits from *independence* from the main session: 
 implementations used as test oracles, adversarial reviews, and derivations.
 
 ```bash
-codex exec --skip-git-repo-check -C /home/tobiasosborne/Projects/prototype-learning \
+codex exec --skip-git-repo-check -C /home/tobias/Projects/prototype-learning \
   -s workspace-write --json - < notes/briefs/codex-NN-<slug>.md \
   > experiments/runs/codex/NN-events.jsonl 2> experiments/runs/codex/NN-err.log
 ```
