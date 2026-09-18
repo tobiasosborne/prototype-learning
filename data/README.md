@@ -8,6 +8,12 @@ Local, gitignored inputs. Nothing here is needed for the default (synthetic) ECG
   (ODC-By 1.0); cite Moody & Mark, IEEE Eng Med Biol 20(3) 2001, and Goldberger et al.,
   Circulation 101(23) 2000, if published.
 
+* `raw/ecg-rosenhahn/ecgfilteredData.mat`, `ecgnoiseData.mat` — the co-author's *original*
+  ECG dataset (`[Rosenhahn e-mail 2026-08-21]`), read by `ptqnn.tasks.ecg.data.load_mailed`
+  (`--source mailed`); clean `ecg_filtered` and pre-noised `ecg_noisy`, (1, 7700) each.  The
+  files are gitignored (copyright), so every mailed run records their SHA256 via
+  `mailed_provenance` and the digest, not the path, is the provenance rule.
+
 The paper does not name its ECG recording `[PTQNN §III.D]`; record 100 is our `[ASSUMPTION]`
 and Table I is reported for both the synthetic signal and this record
 (`experiments/runs/ecg/20260820T162014` and `…165912`). Iris comes from scikit-learn's bundled

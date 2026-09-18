@@ -2,11 +2,12 @@
 
 The paper does not name its recording: "As time-series data an ECG-signal use case has been
 used. The goal is to denoise a signal overlaid with stochastic noise." ``[PTQNN §III.D]`` — no
-database, no sampling rate, no noise level.  We therefore supply two sources and report both:
+database, no sampling rate, no noise level.  We therefore supply three sources and report each:
 
 * :func:`synthetic_ecg` — a deterministic sum-of-Gaussians beat model, tuned to the landmarks
   visible in Fig 13 so that a run is reproducible without network access;
-* :func:`load_physionet` — MIT-BIH Arrhythmia record 100, channel 0, via ``wfdb``.
+* :func:`load_physionet` — MIT-BIH Arrhythmia record 100, channel 0, via ``wfdb``;
+* :func:`load_mailed` — the co-author's *original* recording, e-mailed 2026-08-21.
 
 Fig 13 read-off (docs/physics/rosenhahn_hirche_ptqnn.md §6.3, measured from the raster; every
 default below is tuned to these): 1800 plotted samples on an axis running to 2000; ground truth
@@ -20,6 +21,7 @@ matches *that* view, not a raw clinical trace.
 
 from __future__ import annotations
 
+import hashlib
 import socket
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -28,6 +30,7 @@ from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
+from scipy.io import loadmat
 
 Real = npt.NDArray[np.float64]
 
@@ -203,6 +206,72 @@ def load_physionet(
     if span <= 0:
         raise RuntimeError(f"record {record} channel {channel} is constant")
     return (sig - float(sig.min())) / span
+
+
+# --- the co-author's original recording -------------------------------------------------------
+
+# ``[Rosenhahn e-mail 2026-08-21]``: the two .mat files were mailed as "original" ECG-dataset and
+# are staged (gitignored, copyright) in this directory.  parents[4] is the repo root:
+# src/ptqnn/tasks/ecg/data.py → ecg, tasks, ptqnn, src, <repo> (which holds pyproject.toml).
+MAILED_DIR = Path(__file__).resolve().parents[4] / "data" / "raw" / "ecg-rosenhahn"
+# role → (file name, MATLAB variable); both files hold a (1, 7700) float64 row vector.
+MAILED_FILES: dict[str, tuple[str, str]] = {
+    "clean": ("ecgfilteredData.mat", "ecg_filtered"),
+    "noisy": ("ecgnoiseData.mat", "ecg_noisy"),
+}
+
+
+def load_mailed(directory: Path = MAILED_DIR, n_samples: int | None = 1800) -> tuple[Real, Real]:
+    """The co-author's *original* recording, verbatim.  ``[Rosenhahn e-mail 2026-08-21]``:
+    "Please find attached \"original\" ECG-dataset".
+
+    ``ecgfilteredData.mat`` holds the clean variable ``ecg_filtered`` and ``ecgnoiseData.mat``
+    the noisy ``ecg_noisy``, both ``(1, 7700)`` float64 row vectors already in ``[0, 1]``.  The
+    noisy one is clipped to exactly ``[0, 1]``; over the full trace ``std(noisy − clean) ≈
+    0.0354``.  Samples 1–3 of *both* traces are identical (0.13049, 0.16907, 0.12890), so the
+    noise is already *in* the file.
+
+    ``[ASSUMPTION]`` This is the signal behind ``[PTQNN Fig 13]``.  The paper never says so; the
+    evidence is the range: the first 1800 samples of ``ecg_filtered`` span 0.1112 … 0.9008
+    against the figure's 0.117 … 0.903, the same landmarks :func:`synthetic_ecg` is fitted to
+    (module docstring).  Because the noise is present in the file, :func:`add_noise` is **not**
+    applied to this source, and sigma is the *measured* ``std(noisy − clean) ≈ 0.035`` — about
+    1.8× :data:`DEFAULT_SIGMA = 0.02`, which is our fit to Fig 13's visual envelope, not a figure
+    of the paper.
+
+    The arrays are returned as stored: no renormalisation and no clipping, either of which would
+    silently change the noise level.  ``n_samples=None`` keeps all 7700 samples.
+    """
+    missing = [
+        str(directory / name)
+        for name, _ in MAILED_FILES.values()
+        if not (directory / name).is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"mailed ECG dataset not found; expected {', '.join(missing)}.  Stage the two .mat "
+            f"files from the 2026-08-21 e-mail under {directory}, or use --source synthetic."
+        )
+    out: list[Real] = []
+    for name, key in MAILED_FILES.values():
+        arr = np.asarray(loadmat(directory / name)[key], dtype=np.float64).ravel()
+        out.append(arr if n_samples is None else arr[:n_samples])
+    clean, noisy = out
+    return clean, noisy
+
+
+def mailed_provenance(directory: Path = MAILED_DIR) -> dict[str, str]:
+    """SHA256 of each mailed file keyed by file name, plus the sender — for ``meta.json``.
+
+    The files are gitignored (copyright), so their digest is the only pin a reader in another
+    checkout gets; ``experiments/ecg_table1.py`` records it for ``--source mailed`` runs.
+    """
+    prov = {
+        name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        for name, _ in MAILED_FILES.values()
+    }
+    prov["sender"] = "B. Rosenhahn, e-mail 2026-08-21"
+    return prov
 
 
 def add_noise(clean: Real, sigma: float = DEFAULT_SIGMA, seed: int = 0) -> Real:

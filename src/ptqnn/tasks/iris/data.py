@@ -22,16 +22,28 @@ Choices the papers do not fix (``PLAN.md §0``):
   the 100-sample test splits give only 18–20 (not 30), so Fig 8 supports the *direction* of the
   split, not the ratio (review 002 #9; counts in the Iris run ``meta.json`` files).
   ``[SNN Table I]`` reports 95 % ± 5 on Iris with an unstated split.
-* ``[ASSUMPTION]`` code collisions.  The binarisation is lossy: two samples of different classes
-  can share a 12-bit code, and a quantum state cannot hold two amplitudes for one basis state.
-  We merge duplicates and average the labels (:func:`merge_duplicate_codes`), and report how
-  many distinct codes carried more than one class.  This caps the attainable accuracy at
-  96–99 % on our splits — in the range of the paper's "98 %".
+* ``[ASSUMPTION]`` code collisions under the default policy.  The binarisation is lossy: two
+  samples of different classes can share a 12-bit code, and a quantum state cannot hold two
+  amplitudes for one basis state.  We merge duplicates and average the labels
+  (:func:`merge_duplicate_codes`), and report how many distinct codes carried more than one
+  class.  This caps the attainable accuracy at 96–99 % on our splits — in the range of the
+  paper's "98 %".
+* ``[Rosenhahn e-mail 2026-08-21]``: "On the iris-dataset I should have mentioned that I removed
+  binary patterns which were assigned to two classes."  That is the ``ambiguous="drop"`` policy
+  (:func:`drop_ambiguous_codes`): every code occurring with ≥ 2 distinct labels is removed
+  outright; codes duplicated *within* one class are still merged (one basis state, one
+  amplitude).  The default stays ``"merge"`` so existing numbers do not move; the averaging
+  itself remains an assumption of the paper.
+* ``[ASSUMPTION]`` the drop policy filters the test split as well.  The e-mail fixes only that
+  ambiguous patterns were removed; it is silent on the test set.  We filter both sides because
+  an ambiguous pattern cannot be scored either — its code maps to two different labels, so no
+  function of the code can classify it, and the encoding ceiling is 1.0 only if it is gone.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -138,6 +150,31 @@ def merge_duplicate_codes(codes: Codes, labels: npt.ArrayLike) -> MergedCodes:
     )
 
 
+AmbiguousPolicy = Literal["merge", "drop"]
+"""How to treat a code that carries ≥ 2 distinct labels; default "merge" keeps old numbers."""
+
+
+def drop_ambiguous_codes(codes: Codes, labels: npt.ArrayLike) -> tuple[Codes, Codes, int]:
+    """Remove every sample whose code occurs with ≥ 2 distinct labels.
+
+    ``[Rosenhahn e-mail 2026-08-21]``: "On the iris-dataset I should have mentioned that I
+    removed binary patterns which were assigned to two classes."  Returns the kept codes, the
+    kept labels (same order as the input) and the number of DISTINCT codes dropped (not
+    samples).  Pure numpy, deterministic; same-class duplicates pass through untouched — they
+    are merged later by :func:`merge_duplicate_codes`.
+    """
+    c = np.asarray(codes, dtype=np.int64)
+    y = np.asarray(labels, dtype=np.int64)
+    if c.shape != y.shape:
+        raise ValueError(f"codes {c.shape} and labels {y.shape} must have the same shape")
+    # distinct (code, label) pairs; a code appearing in ≥ 2 of them is ambiguous
+    pairs = np.unique(np.stack([c, y]), axis=1)
+    amb_codes, n_labels = np.unique(pairs[0], return_counts=True)
+    ambiguous = amb_codes[n_labels > 1]
+    keep = ~np.isin(c, ambiguous)
+    return c[keep], y[keep], int(ambiguous.size)
+
+
 def encoding_accuracy_ceiling(codes: Codes, labels: Codes) -> float:
     """Best accuracy any function of the code can reach — majority label per distinct code."""
     c = np.asarray(codes, dtype=np.int64)
@@ -159,6 +196,12 @@ class IrisSplit:
     centers: Real
     seed: int
     train_size: float
+    ambiguous: AmbiguousPolicy
+    """"merge" averages ambiguous labels [ASSUMPTION]; "drop" removes the code entirely."""
+    n_dropped_train: int
+    """Distinct codes removed from the train split (0 unless ``ambiguous == "drop"``)."""
+    n_dropped_test: int
+    """Distinct codes removed from the test split (0 unless ``ambiguous == "drop"``)."""
 
     @property
     def train_collisions(self) -> int:
@@ -168,7 +211,7 @@ class IrisSplit:
     def test_collisions(self) -> int:
         return merge_duplicate_codes(self.test_codes, self.test_labels).n_collisions
 
-    def summary(self) -> dict[str, float | int]:
+    def summary(self) -> dict[str, float | int | str]:
         tr = merge_duplicate_codes(self.train_codes, self.train_labels)
         te = merge_duplicate_codes(self.test_codes, self.test_labels)
         return {
@@ -183,13 +226,23 @@ class IrisSplit:
             "test_collisions": te.n_collisions,
             "train_ceiling": encoding_accuracy_ceiling(self.train_codes, self.train_labels),
             "test_ceiling": encoding_accuracy_ceiling(self.test_codes, self.test_labels),
+            "ambiguous": self.ambiguous,
+            "n_dropped_train": self.n_dropped_train,
+            "n_dropped_test": self.n_dropped_test,
         }
 
 
-def load_split(seed: int = 0, train_size: float = 1.0 / 3.0) -> IrisSplit:
+def load_split(
+    seed: int = 0, train_size: float = 1.0 / 3.0, ambiguous: AmbiguousPolicy = "merge"
+) -> IrisSplit:
     """Stratified split, k-means fitted on the training rows, both sides encoded ``[SNN §IV.B]``.
 
     ``[ASSUMPTION]`` ``train_size`` — see the module docstring.
+
+    With ``ambiguous="drop"`` (``[Rosenhahn e-mail 2026-08-21]``, "I removed binary patterns
+    which were assigned to two classes") every code with ≥ 2 distinct labels is removed from
+    BOTH splits before the same-class merge; ``[ASSUMPTION]`` the test set is filtered too — an
+    ambiguous pattern cannot be scored either, and the e-mail fixes only the training set.
     """
     x, y = load_iris_xy()
     idx = np.arange(x.shape[0], dtype=np.int64)
@@ -198,6 +251,11 @@ def load_split(seed: int = 0, train_size: float = 1.0 / 3.0) -> IrisSplit:
     centers = fit_centers(x[tr], seed=seed)
     train_codes, train_labels = encode_dataset(x[tr], centers, y[tr])
     test_codes, test_labels = encode_dataset(x[te], centers, y[te])
+    if ambiguous == "drop":
+        train_codes, train_labels, n_dropped_train = drop_ambiguous_codes(train_codes, train_labels)
+        test_codes, test_labels, n_dropped_test = drop_ambiguous_codes(test_codes, test_labels)
+    else:
+        n_dropped_train = n_dropped_test = 0
     return IrisSplit(
         train_index=tr,
         test_index=te,
@@ -208,4 +266,7 @@ def load_split(seed: int = 0, train_size: float = 1.0 / 3.0) -> IrisSplit:
         centers=centers,
         seed=seed,
         train_size=train_size,
+        ambiguous=ambiguous,
+        n_dropped_train=n_dropped_train,
+        n_dropped_test=n_dropped_test,
     )

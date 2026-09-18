@@ -11,6 +11,13 @@ from ptqnn.tasks.ecg import data, model, train
 
 # --- data -------------------------------------------------------------------------------------
 
+# The co-author's "original" dataset [Rosenhahn e-mail 2026-08-21]; not in git (see
+# data/README.md), so every test that reads it is skipped when it has not been staged.
+DATA_DIR = data.MAILED_DIR
+needs_mailed = pytest.mark.skipif(
+    not DATA_DIR.exists(), reason="mailed ECG dataset not staged in data/raw/ecg-rosenhahn/"
+)
+
 
 def test_synthetic_ecg_is_in_the_unit_interval() -> None:
     s = data.synthetic_ecg(1800, seed=0)
@@ -79,6 +86,60 @@ def test_windows_reflect_padding_at_the_boundary() -> None:
     X, _ = data.windows(s, half_width=2, edge="reflect")
     assert np.allclose(X[0], [2, 1, 0, 1, 2])
     assert np.allclose(X[-1], [7, 8, 9, 8, 7])
+
+
+@needs_mailed
+def test_load_mailed_returns_the_full_and_the_default_cut() -> None:
+    """Both traces are (1, 7700) float64 row vectors [Rosenhahn e-mail 2026-08-21]."""
+    clean, noisy = data.load_mailed(n_samples=None)
+    assert clean.shape == (7700,) and noisy.shape == (7700,)
+    assert clean.dtype == np.float64 and noisy.dtype == np.float64
+    clean, noisy = data.load_mailed()
+    assert clean.shape == (1800,) and noisy.shape == (1800,)
+
+
+@needs_mailed
+def test_load_mailed_first_samples_are_identical_in_both_traces() -> None:
+    """[Rosenhahn e-mail 2026-08-21]: samples 1-3 of *both* traces are 0.13049, 0.16907, 0.12890."""
+    clean, noisy = data.load_mailed()
+    first = np.array([0.13049, 0.16907, 0.12890])
+    assert np.allclose(clean[:3], first, atol=1e-5)
+    assert np.allclose(noisy[:3], first, atol=1e-5)
+
+
+@needs_mailed
+def test_load_mailed_ranges_and_measured_noise_level() -> None:
+    """The clean trace is already in [0, 1]; the noisy one is clipped to exactly [0, 1] and
+    noisy - filtered has std ≈ 0.0354 [Rosenhahn e-mail 2026-08-21].  No renormalisation."""
+    clean, noisy = data.load_mailed(n_samples=None)
+    assert clean.min() >= 0.0 and clean.max() <= 1.0
+    assert noisy.min() == 0.0 and noisy.max() == 1.0
+    assert 0.030 < float(np.std(noisy - clean)) < 0.040
+
+
+@needs_mailed
+def test_prepare_mailed_uses_the_file_noise_instead_of_add_noise() -> None:
+    """The mailed files already contain the noise, so ``sigma`` is *measured*, not applied."""
+    ds = train.prepare(source="mailed", n_samples=1800)
+    assert ds.source == "mailed"
+    # same window count as the synthetic default (1800 samples, reflect padding)
+    assert ds.X.shape[0] == train.prepare(source="synthetic", n_samples=1800).X.shape[0]
+    # sigma is exactly the measured std, and matches the full-trace value to 0.005
+    assert abs(ds.sigma - float(np.std(ds.noisy - ds.clean))) < 1e-12
+    assert abs(ds.sigma - 0.03545) < 0.005
+    assert ds.sigma != data.DEFAULT_SIGMA
+
+
+@needs_mailed
+def test_mailed_provenance_pins_the_files_and_the_sender() -> None:
+    prov = data.mailed_provenance()
+    assert prov["ecgfilteredData.mat"] == (
+        "9ed65523b30e588012dba0ece34e8d0bb6951254357cf0757ef1692b7439b456"
+    )
+    assert prov["ecgnoiseData.mat"] == (
+        "cc94548d1c40b63b597b532edbf0bd198ac3a12ac9253d0efc4b40255d0753b9"
+    )
+    assert prov["sender"] == "B. Rosenhahn, e-mail 2026-08-21"
 
 
 def test_contiguous_split_has_no_window_overlap() -> None:

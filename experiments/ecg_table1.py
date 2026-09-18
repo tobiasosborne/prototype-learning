@@ -7,6 +7,8 @@ and a Fig-13-style ``fig13.png`` (noisy red, ground truth green, denoised blue) 
 
     uv run python experiments/ecg_table1.py --source synthetic --iterations 40
     uv run python experiments/ecg_table1.py --source physionet --record 100
+    uv run python experiments/ecg_table1.py --source mailed --n-samples 1800
+    uv run python experiments/ecg_table1.py --source mailed --n-samples 0  # all 7700 samples
 """
 
 from __future__ import annotations
@@ -99,9 +101,20 @@ def figure13(ds: train.EcgDataset, rows: list[dict[str, Any]], path: Path) -> No
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--source", choices=("synthetic", "physionet"), default="synthetic")
+    p.add_argument("--source", choices=("synthetic", "physionet", "mailed"), default="synthetic")
     p.add_argument("--record", default="100", help="PhysioNet record (--source physionet)")
-    p.add_argument("--n-samples", type=int, default=1800, help="signal length (Fig 13: 1800)")
+    p.add_argument(
+        "--mailed-dir",
+        type=Path,
+        default=data.MAILED_DIR,
+        help="directory with the mailed ecgfilteredData.mat / ecgnoiseData.mat (--source mailed)",
+    )
+    p.add_argument(
+        "--n-samples",
+        type=int,
+        default=1800,
+        help="signal length (Fig 13: 1800); 0 = the full trace (--source mailed: 7700)",
+    )
     p.add_argument("--sigma", type=float, default=data.DEFAULT_SIGMA)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--iterations", type=int, default=40)
@@ -121,10 +134,17 @@ def main() -> None:
     out = args.out or ROOT / "experiments" / "runs" / "ecg" / time.strftime("%Y%m%dT%H%M%S")
     out.mkdir(parents=True, exist_ok=True)
 
-    kwargs: dict[str, Any] = {"record": args.record} if args.source == "physionet" else {}
+    kwargs: dict[str, Any] = {}
+    if args.source == "physionet":
+        kwargs["record"] = args.record
+    elif args.source == "mailed":
+        kwargs["directory"] = args.mailed_dir
+    # 0 windows is meaningless in this task, so `--n-samples 0` is the sentinel for "the whole
+    # trace"; only the mailed source has a variable length (the file's 7700 samples).
+    n_samples: int | None = args.n_samples if args.n_samples > 0 else None
     ds = train.prepare(
         source=args.source,
-        n_samples=args.n_samples,
+        n_samples=n_samples,
         seed=args.seed,
         sigma=args.sigma,
         train_frac=args.train_frac,
@@ -168,8 +188,9 @@ def main() -> None:
         "source": args.source,
         "sigma": ds.sigma,
         "R": ds.R,
-        "n_samples": args.n_samples,
+        "n_samples": ds.clean.size,
         "record": args.record if args.source == "physionet" else None,
+        "mailed": (data.mailed_provenance(args.mailed_dir) if args.source == "mailed" else None),
         "config": {**asdict(train.DEFAULT_CONFIG), "iterations": args.iterations},
         "subsample": args.subsample,
         "restarts": args.restarts,

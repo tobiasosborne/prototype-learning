@@ -95,7 +95,7 @@ def init_candidates_params(
     return out
 
 
-Source = Literal["synthetic", "physionet"]
+Source = Literal["synthetic", "physionet", "mailed"]
 
 
 @dataclass(frozen=True)
@@ -109,6 +109,8 @@ class EcgDataset:
     y: Real
     train_idx: npt.NDArray[np.int64]
     test_idx: npt.NDArray[np.int64]
+    # Sigma the *noise* carries: the requested level for synthetic/physionet, the measured
+    # ``std(noisy − clean)`` for ``source="mailed"`` (whose files arrive pre-noised).
     sigma: float
     source: Source
 
@@ -120,19 +122,33 @@ class EcgDataset:
 
 def prepare(
     source: Source = "synthetic",
-    n_samples: int = 1800,
+    n_samples: int | None = 1800,
     seed: int = 0,
     sigma: float = data.DEFAULT_SIGMA,
     train_frac: float = 0.5,
     half_width: int = 2,
     **source_kwargs: Any,
 ) -> EcgDataset:
-    """Build the dataset: clean signal, additive noise, sliding windows, contiguous split."""
+    """Build the dataset: clean signal, additive noise, sliding windows, contiguous split.
+
+    ``source="mailed"`` is the co-author's original recording: its files already carry the
+    noise, so :func:`data.add_noise` is *not* applied and ``sigma`` comes back **measured** as
+    ``std(noisy − clean)`` rather than as the requested ``sigma`` (which is ignored for this
+    source).  ``n_samples=None`` keeps the whole trace, which only ``"mailed"`` supports.
+    """
     if source == "synthetic":
+        if n_samples is None:
+            raise ValueError('source="synthetic" needs an explicit n_samples')
         clean = data.synthetic_ecg(n_samples, seed=seed, **source_kwargs)
-    else:
+        noisy = data.add_noise(clean, sigma=sigma, seed=seed + 1)
+    elif source == "physionet":
+        if n_samples is None:
+            raise ValueError('source="physionet" needs an explicit n_samples')
         clean = data.load_physionet(n_samples=n_samples, **source_kwargs)
-    noisy = data.add_noise(clean, sigma=sigma, seed=seed + 1)
+        noisy = data.add_noise(clean, sigma=sigma, seed=seed + 1)
+    else:
+        clean, noisy = data.load_mailed(n_samples=n_samples, **source_kwargs)
+        sigma = float(np.std(noisy - clean))
     X, y = data.supervised_windows(noisy, clean, half_width=half_width)
     tr, te = data.contiguous_split(X.shape[0], train_frac=train_frac, half_width=half_width)
     return EcgDataset(clean, noisy, X, y, tr, te, sigma, source)
