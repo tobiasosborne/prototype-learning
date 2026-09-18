@@ -21,6 +21,16 @@ hp = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(hp)
 
 
+_IRIS_RUNS_PRESENT = all(
+    (Path(__file__).resolve().parents[1] / "experiments/runs/iris" / d).is_dir()
+    for d in ("20260820T144849Z", "20260820T145454Z", "20260820T145455Z")
+)
+_needs_iris_runs = pytest.mark.skipif(
+    not _IRIS_RUNS_PRESENT,
+    reason="reads the pinned Iris run dirs (gitignored; present on the workstation only)",
+)
+
+
 def test_idle_fidelity_limits() -> None:
     assert hp.idle_fidelity(0.0, 100.0, 80.0) == pytest.approx(1.0)
     # t ≫ T1, T2: the channel is the reset-to-|0⟩ map, F_avg = ½ (Nielsen, d = 2).
@@ -30,6 +40,7 @@ def test_idle_fidelity_limits() -> None:
     assert f**7 == pytest.approx(0.8971, abs=2e-4)
 
 
+@_needs_iris_runs
 def test_stateprep_dense_count_is_shende_bullock_markov() -> None:
     s = hp.section_stateprep(n=12)
     assert s["dense_cnots_sbm"] == 2**13 - 24 == 8168  # 2^(n+1) − 2n; not 4070 = 2^n − 2n − 2
@@ -122,6 +133,7 @@ def test_entry_values_parses_combined_fields() -> None:
     assert hp._entry_values({"field": "snapshot epoch", "value": "2025"}) == {}
 
 
+@_needs_iris_runs
 def test_stateprep_uses_distinct_training_codes() -> None:
     s = hp.section_stateprep(n=12)
     assert s["k_distinct_train_codes_per_run"] == [14, 12, 14]
