@@ -33,9 +33,10 @@ Updated: 2026-09-18 (session 4, paused; pi edits uncommitted — see HANDOFF.md)
 | Fig 6 iterative KL | ≈0 (≈1e-3) by ~120 iters | per-input KL < 1e-3 at 12k / 23k / 73k single-coordinate KW steps (seeds 3/2/1); seed 0 plateaus at 0.02–0.03; the same networks have superposition KL 0.07–0.4 (run bitcount/20260918T111515Z) | reproduced in the per-input observable; the iteration unit is an assumption (the old 0.15 was the superposition KL of a per-input-trained net) |
 | Fig 7 Iris loss curves | prototype generalises | classic test KL rises, prototype monotone | reproduced |
 | Iris accuracy | ≈98 % | 95/91/98 % (ceilings 97/99/99 %) | in range |
-| Fig 9 Iris TSNE | weights span data | not reproduced | discrepancy |
+| Fig 9 Iris TSNE | weights span data | t-SNE not reproduced; replaced by placement metrics (covering cost ρ, firing coverage/selectivity z-scores; `iris/train.py`, `--rescore`). Seed 0, drop policy: prototype ρ +0.03 (inverse) / +0.29 (direct), classic −0.17; firing selectivity z +21 (prototype) vs +0.2 (classic), coverage z +0.65 vs +3.0; test acc 97.6 % both (run iris/20260918T085641Z-drop) | one seed; the ≥20-seed sweep (workstation) decides |
 | Flappy Bird | perfect play | 110/110 pipes, 20/20 seeds | reproduced (own clone) |
 | Table I ECG PSNR (1/2/3 proto) | 32.9 / 40.00 / 40.04 | 37.4 / 38.0 / 38.1 (synthetic) | within ~2 dB |
+| Table I ECG PSNR on the co-author's original recording (first 1800 samples, input PSNR 27.0 dB, best of 8 restarts) | 32.9 / 40.00 / 40.04 (CQNN 32.7 / 38.2 / 39.65) | PTQNN 36.8 / 37.5 / 36.9; CQNN 34.0 / 36.3 / 38.0 (run ecg/20260918T132924) | 1-neuron advantage reproduced (larger than paper); 2/3-neuron cells 2.5–3 dB short, ordering at 3 flips — discrepancy; full 7700-sample run pending (workstation) |
 
 ## Shot-noise scoreboard (session 2)
 

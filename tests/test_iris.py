@@ -1,5 +1,10 @@
 """Red-phase tests for the Iris task ``[PTQNN §III.C, Fig 7–9]``, ``[SNN §IV.B]``."""
 
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -380,3 +385,166 @@ def test_prototype_placement_on_random_params_is_finite_and_bounded(hidden: str)
     )
     assert full.n_patterns == 4
     assert full.n_dead == score.n_dead
+
+
+# --- encoding-free firing score (session 5): what the hidden neurons actually respond to ---
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_firing_matrix_is_a_probability_and_matches_the_reference_backend(hidden: str) -> None:
+    # P(hidden_j = 1 | code) read off the real circuit.  The fast route regroups the hidden
+    # layer input qubit by input qubit and traces each input qubit out (exact: blocks on
+    # different input qubits commute, see `_hidden_layer_factors`); the oracle route runs the
+    # FULL 17-qubit network through the numpy reference backend.  They must agree to machine
+    # precision — a marginal-only check would not catch a wrong regrouping, so the comparison
+    # is run for every neuron and every code, not on an aggregate.
+    split = iris_data.load_split(seed=0, ambiguous="drop")
+    codes = np.unique(split.train_codes)[:3]
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    params = net.random_params(np.random.default_rng(2), scale=0.7)
+    fast = iris_train.firing_matrix(net, params, codes)
+    assert fast.shape == (4, codes.size)
+    assert fast.min() >= 0.0 and fast.max() <= 1.0
+    oracle = iris_train.firing_matrix(net, params, codes, backend=ref.StatevectorBackend())
+    np.testing.assert_allclose(fast, oracle, atol=1e-12)
+    # distinct codes only, ordered like np.unique — duplicates do not add columns
+    dup = np.concatenate([codes, codes])
+    np.testing.assert_allclose(iris_train.firing_matrix(net, params, dup), fast, atol=1e-15)
+
+
+def test_prototype_with_zero_prototype_angles_fires_on_the_hamming_weight_only() -> None:
+    # [PTQNN Fig 2] with φ = 0 the RX(φ)/RX(−φ) sandwich is the identity, so a basis input |c⟩
+    # simply triggers one CRX(θ) per 1-bit and all of them are X-rotations of the same hidden
+    # qubit: the hidden state is RX(θ·|c|)|0⟩ and P(fire | c) = sin²(θ·|c|/2).  Every valid Iris
+    # code has exactly four 1-bits [SNN §IV.B], so the neuron CANNOT tell the codes apart —
+    # P(fire) = sin²(2θ) for all of them.  This is the degenerate case the prototype angles
+    # exist to break, and it pins the firing matrix to a closed form.
+    net = Network(n_inputs=12, n_hidden=1, hidden="prototype")
+    codes = np.unique(iris_data.load_split(seed=0, ambiguous="drop").train_codes)
+    for theta in (np.pi, np.pi / 3, 0.7):
+        params = net.pack([(np.zeros(12), theta)], (np.array([0.3]), 0.1))
+        fire = iris_train.firing_matrix(net, params, codes)
+        assert fire.shape == (1, codes.size)
+        np.testing.assert_allclose(fire, np.sin(2.0 * theta) ** 2, atol=1e-12)
+        # a constant response covers as loudly as it fires and discriminates nothing
+        coverage, selectivity = iris_train.coverage_selectivity(fire)
+        assert coverage == pytest.approx(np.sin(2.0 * theta) ** 2, abs=1e-12)
+        assert selectivity == pytest.approx(0.0, abs=1e-12)
+
+
+def test_relative_dead_tolerance_never_flags_the_strongest_neuron() -> None:
+    # The trained prototype layer of experiments/runs/iris/20260918T085641Z-drop.  The Iris
+    # target is amplitude-encoded [PTQNN Fig 8], so every coupling is small: drive_j =
+    # |sin(θ_j/2)·sin(w_j/2)| ≤ 0.044.  The former absolute tol = 0.05 called all four dead;
+    # the relative tolerance keeps the strongest and flags only the one 16× below it.
+    net = Network(n_inputs=12, n_hidden=4, hidden="prototype")
+    theta = [0.45, -0.35, 0.31, -0.39]
+    w_out = np.array([0.16, -0.03, -0.56, -0.31])
+    params = net.pack([(np.zeros(12), t) for t in theta], (w_out, 0.0))
+    drive = iris_train.output_drive(net, params)
+    np.testing.assert_allclose(drive, np.abs(np.sin(np.array(theta) / 2) * np.sin(w_out / 2)))
+    assert drive.max() < 0.05  # would have been "all dead" under the old absolute tolerance
+    dead = iris_train.dead_hidden_neurons(net, params)
+    assert not bool(dead[int(drive.argmax())]), "the strongest neuron is never dead"
+    np.testing.assert_array_equal(dead, drive < 0.1 * drive.max())
+    assert dead.sum() == 1
+    # the absolute floor is still available and reproduces the old verdict
+    assert iris_train.dead_hidden_neurons(net, params, tol_abs=0.05).all()
+    # a strong neuron cannot be flagged by the relative rule however small the layer's scale
+    for scale in (1e-3, 1.0, 10.0):
+        p = net.pack([(np.zeros(12), scale * t) for t in theta], (scale * w_out, 0.0))
+        d = iris_train.dead_hidden_neurons(net, p)
+        assert not bool(d[int(iris_train.output_drive(net, p).argmax())])
+
+
+def test_prototype_placement_reports_all_dead_instead_of_raising(
+    split: iris_data.IrisSplit,
+) -> None:
+    # An all-dead layer used to raise and killed the run AFTER a 40-minute training
+    # (experiments/runs/iris/20260918T085641Z-drop lost its results.json that way).
+    net = Network(n_inputs=12, n_hidden=4, hidden="prototype")
+    params = net.random_params(np.random.default_rng(0), scale=0.7)
+    score = iris_train.prototype_placement(
+        net, params, split.train_codes, n_draws=200, seed=0, tol_abs=1.0
+    )
+    assert score.all_dead is True
+    assert score.n_dead == 4 and score.n_patterns == 4
+    assert np.isfinite(score.R) and np.isfinite(score.rho)
+    # the ordinary case still reports all_dead=False
+    alive = iris_train.prototype_placement(net, params, split.train_codes, n_draws=200, seed=0)
+    assert alive.all_dead is False
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_firing_placement_z_scores_the_trained_layer_against_a_random_null(hidden: str) -> None:
+    split = iris_data.load_split(seed=0, ambiguous="drop")
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    params = net.random_params(np.random.default_rng(7), scale=0.7)
+    score = iris_train.firing_placement(net, params, split.train_codes, n_draws=50, seed=0)
+    assert 0.0 <= score.coverage <= 1.0 and 0.0 <= score.selectivity <= 1.0
+    assert score.n_draws == 50 and score.n_hidden == 4
+    assert score.n_codes == int(np.unique(split.train_codes).size)
+    assert score.coverage_null_std > 0.0 and score.selectivity_null_std > 0.0
+    # the z-scores are exactly the standardised summaries, not a re-derivation
+    assert score.coverage == pytest.approx(
+        score.coverage_null + score.rho_f * score.coverage_null_std
+    )
+    assert score.selectivity == pytest.approx(
+        score.selectivity_null + score.rho_f_selectivity * score.selectivity_null_std
+    )
+    # the null is the initialisation itself, so a draw from it scores ≈ 0 rather than ≫ 0
+    drawn = net.random_params(np.random.default_rng(0), scale=0.7)
+    typical = iris_train.firing_placement(net, drawn, split.train_codes, n_draws=50, seed=0)
+    assert abs(typical.rho_f) < 5.0
+    with pytest.raises(ValueError, match="n_draws"):
+        iris_train.firing_placement(net, params, split.train_codes, n_draws=0)
+
+
+def test_rescore_writes_results_without_retraining(tmp_path: Path) -> None:
+    # --rescore must reach results-rescore.json from params-*.npy alone: the run that crashed
+    # after training had neither results.json nor meta.json.
+    script = Path(__file__).resolve().parents[1] / "experiments" / "iris_fig7_fig8_fig9.py"
+    spec = importlib.util.spec_from_file_location("iris_fig7_fig8_fig9", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["iris_fig7_fig8_fig9"] = module
+    spec.loader.exec_module(module)
+    rng = np.random.default_rng(0)
+    for kind in ("classic", "prototype"):
+        net = Network(n_inputs=12, n_hidden=4, hidden=kind)  # type: ignore[arg-type]
+        np.save(tmp_path / f"params-{kind}.npy", net.random_params(rng, scale=0.7))
+    rc = module.main(
+        [
+            "--rescore",
+            str(tmp_path),
+            "--seed",
+            "0",
+            "--ambiguous",
+            "drop",
+            "--placement-draws",
+            "50",
+            "--firing-draws",
+            "3",
+        ]
+    )
+    assert rc == 0
+    results = json.loads((tmp_path / "results-rescore.json").read_text())
+    meta = json.loads((tmp_path / "meta-rescore.json").read_text())
+    assert set(results) == {"accuracy", "placement", "firing"}
+    assert set(results["placement"]) == {
+        f"{k}-{e}" for k in ("classic", "prototype") for e in ("inverse", "direct")
+    }
+    assert set(results["firing"]) == {"classic", "prototype"}
+    for kind in ("classic", "prototype"):
+        assert 0.0 <= results["accuracy"][kind]["test"] <= 1.0
+        assert "error" not in results["firing"][kind]
+        assert results["firing"][kind]["n_draws"] == 3
+    assert meta["flags"]["ambiguous"] == "drop" and meta["n_hidden_from_params"] == 4
+    assert meta["git_hash"] and meta["split"]["ambiguous"] == "drop"
+    # nothing was retrained: the parameter files are untouched and no new params appeared
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "meta-rescore.json",
+        "params-classic.npy",
+        "params-prototype.npy",
+        "results-rescore.json",
+    ]

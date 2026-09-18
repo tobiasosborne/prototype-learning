@@ -52,9 +52,28 @@ scripts in `experiments/README.md`).
   0 = "no better than random patterns".  It is computed for prototype and classic in both
   encodings ("inverse" = the Fig 9 cos²/sin² map, "direct" = the complementary sin²/cos²) on
   the training codes and written to `results.json["placement"]`; dead neurons (negligible
-  output coupling) are excluded from the pattern set.  Fig 9's claim counts as reproduced only
+  output coupling *relative* to the strongest neuron — the amplitude-encoded target keeps every
+  coupling small in absolute terms) are excluded from the pattern set, and an all-dead layer is
+  reported as `all_dead` rather than raised.  Fig 9's claim counts as reproduced only
   if, over ≥ 20 (seed, split) pairs, median rho_prototype ≥ 0.5 with a bootstrap CI excluding
   0 and rho_prototype > rho_classic (paired one-sided Wilcoxon, p < 0.01).
+* Because that metric still reads the angles through an assumed angle→pattern map — which the
+  trained anti-pattern prototypes defeat (angles ≈ 0 except `RX(±π)` on three inputs, so the
+  per-block argmax is a coin toss) — `train.firing_placement` scores the same claim without any
+  encoding: `firing_matrix` prepares each distinct training code as a basis state, runs the
+  hidden layer and reads `P(hidden_j = 1 | c)` off the circuit (exact, by regrouping the layer
+  input qubit by input qubit and tracing each input qubit out, 200× faster than the 16-qubit
+  statevector and pinned to the reference backend), and the layer is summarised by
+  `coverage = mean_c max_j P_j(c)` (every code has a responder) and
+  `selectivity = mean_j (max_c P_j(c) − mean_c P_j(c))` (a responder discriminates), each
+  z-scored against 200 random parameter vectors drawn from the `init_scale` initialisation →
+  `rho_f`, `rho_f_selectivity` in `results.json["firing"]`.  Reproducing Fig 9 in these terms
+  means both z-scores positive for the prototype and larger than the classic's over ≥ 20 seeds.
+  `iris_fig7_fig8_fig9.py` writes `results.json`/`meta.json` before any scoring and records a
+  scorer's exception instead of crashing, and `--rescore RUN_DIR` recomputes accuracies and
+  both placement scores from a finished run's `params-*.npy` into `results-rescore.json` +
+  `meta-rescore.json` without retraining (`--seed/--train-size/--ambiguous` must match the
+  original run; `n_hidden` is inferred from the parameter count).
 * Results: accuracy 95/91/98 % (three seeds); Fig 7 contrast reproduced (classic test KL rises,
   prototype monotone); **Fig 9 not reproduced** (prototype weights do not visibly span the data
   in TSNE). Script: `iris_fig7_fig8_fig9.py` (two 17-q statevector processes, `OMP_NUM_THREADS=1`).

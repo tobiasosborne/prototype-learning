@@ -26,7 +26,10 @@ import numpy as np
 import numpy.typing as npt
 from sklearn.manifold import TSNE
 
+from ptqnn.backends import batched
+from ptqnn.backends import reference as ref
 from ptqnn.backends.base import Backend
+from ptqnn.circuits import ir
 from ptqnn.circuits.neurons import HiddenKind, Network
 from ptqnn.tasks.iris import data as iris_data
 from ptqnn.tasks.iris import model as iris_model
@@ -34,6 +37,7 @@ from ptqnn.tasks.iris.data import Codes, code_bits
 from ptqnn.train import kwsa
 
 Real = npt.NDArray[np.float64]
+Complex = npt.NDArray[np.complex128]
 
 # [ASSUMPTION] KW–SA hyper-parameters.  Neither paper publishes a_n, c_n, T or k.  These are the
 # bit-count settings (`ptqnn.tasks.bitcount.SUPERPOSITION_CONFIG`) re-tuned for the Iris loss
@@ -250,27 +254,49 @@ def decode_hidden_patterns(
     return block_argmax(m)
 
 
-def dead_hidden_neurons(
-    net: Network, params: npt.ArrayLike, tol: float = 0.05
-) -> npt.NDArray[np.bool_]:
-    """``(n_hidden,)`` bool — neurons whose output coupling is negligible.
+def output_drive(net: Network, params: npt.ArrayLike) -> Real:
+    """``(n_hidden,)`` — ``|sin(θ_j/2)·sin(w_j/2)|``, how strongly neuron ``j`` reaches the output.
 
-    A neuron is dead when it cannot influence the output: ``|sin(θ_j/2)·sin(w_j/2)| < tol``
-    with ``θ_j`` the neuron's CRX angle and ``w_j`` its output-layer weight (``Network.unpack``
+    ``θ_j`` is the neuron's CRX angle and ``w_j`` its output-layer weight (``Network.unpack``
     gives both for the prototype kind: the shared CRX angle ``θ_j`` is the per-neuron scalar).
     """
     hidden, (w_out, _) = net.unpack(params)
-    dead = np.zeros(net.n_hidden, dtype=np.bool_)
+    drive = np.zeros(net.n_hidden, dtype=np.float64)
     for j, (angles, scalar) in enumerate(hidden):
         if net.hidden == "prototype":
-            drive = abs(np.sin(scalar / 2.0))  # θ_j, the shared CRX angle [PTQNN Fig 2]
+            d = abs(np.sin(scalar / 2.0))  # θ_j, the shared CRX angle [PTQNN Fig 2]
         else:
             # [ASSUMPTION] a classic neuron has no single CRX angle — its per-neuron scalar is
             # the bias [PTQNN Fig 1], and a bias offset does not decouple the neuron.  We take
             # the strongest input coupling, max_i |sin(w_i/2)|, as the drive instead.
-            drive = float(np.max(np.abs(np.sin(np.asarray(angles, dtype=np.float64) / 2.0))))
-        dead[j] = drive * abs(np.sin(w_out[j] / 2.0)) < tol
-    return dead
+            d = float(np.max(np.abs(np.sin(np.asarray(angles, dtype=np.float64) / 2.0))))
+        drive[j] = d * abs(np.sin(w_out[j] / 2.0))
+    return drive
+
+
+def dead_hidden_neurons(
+    net: Network, params: npt.ArrayLike, tol_rel: float = 0.1, tol_abs: float = 0.0
+) -> npt.NDArray[np.bool_]:
+    """``(n_hidden,)`` bool — neurons whose output coupling is negligible *relative to the layer*.
+
+    Neuron ``j`` is dead when ``drive_j < tol_rel · max_k drive_k`` (or, with an absolute floor,
+    when ``drive_j < tol_abs``), with ``drive`` from :func:`output_drive`.
+
+    The tolerance is relative because the Iris target is *amplitude-encoded*
+    (``p(x) ∝ (label+1)²`` ``[PTQNN Fig 8]``): the whole output distribution has to fit into
+    three levels in the ratio 1 : 4 : 9 over ~13 codes, so the trained couplings are small in
+    absolute terms — on ``experiments/runs/iris/20260918T085641Z-drop`` the prototype net has
+    ``θ_j ∈ {0.45, −0.35, 0.31, −0.39}`` and ``w_out ∈ {0.16, −0.03, −0.56, −0.31}``, i.e.
+    ``drive ≤ 0.06``.  The former absolute ``tol = 0.05`` therefore called all four neurons dead
+    although they differ by a factor 20 among themselves; "dead" can only mean "dead compared
+    with its neighbours".  ``[ASSUMPTION]`` ``tol_rel = 0.1`` — one order of magnitude below the
+    strongest neuron; ``tol_abs = 0.0`` (off) by default.
+
+    By construction the strongest neuron is never flagged unless ``tol_abs`` says so.
+    """
+    drive = output_drive(net, params)
+    strongest = float(drive.max()) if drive.size else 0.0
+    return np.asarray((drive < tol_rel * strongest) | (drive < tol_abs), dtype=np.bool_)
 
 
 def covering_cost(patterns: npt.ArrayLike, codes: Codes) -> float:
@@ -357,6 +383,9 @@ class PlacementScore:
     """Patterns actually scored (``k`` after dropping dead neurons)."""
     encoding: str
     """The angle→probability map used to decode ("inverse" or "direct")."""
+    all_dead: bool = False
+    """Every neuron was flagged dead, so ``drop_dead`` was ignored and all ``k`` patterns
+    scored — the score is then about the whole layer, dead or not."""
 
 
 def prototype_placement(
@@ -367,6 +396,8 @@ def prototype_placement(
     n_draws: int = 10_000,
     seed: int = 0,
     drop_dead: bool = True,
+    tol_rel: float = 0.1,
+    tol_abs: float = 0.0,
 ) -> PlacementScore:
     """Quantitative replacement for the ``[PTQNN Fig 9]`` t-SNE evidence.
 
@@ -375,18 +406,24 @@ def prototype_placement(
     null (:func:`covering_null`) and the brute-force medoid floor (:func:`covering_floor`).
     With ``drop_dead`` (default) neurons of negligible output coupling are excluded from the
     pattern set — ``k`` shrinks and null and floor use the reduced ``k`` — so a net that parked
-    three of four neurons cannot inflate its coverage with dead ones.
+    three of four neurons cannot inflate its coverage with dead ones.  If *every* neuron is
+    flagged dead the function does NOT raise: it falls back to scoring all ``k`` patterns and
+    reports ``all_dead=True`` with ``n_dead = k``.  (That case is real — with an
+    amplitude-encoded target the trained couplings are uniformly small, see
+    :func:`dead_hidden_neurons` — and losing a whole run to a diagnostic is worse than
+    reporting a score that the ``all_dead`` flag qualifies.)
 
     Reproducing Fig 9's claim ("the prototype weights span the dataset", the classic ones do
     not) counts as demonstrated only if, over ≥ 20 (seed, split) pairs, the median
     ``rho_prototype ≥ 0.5`` with a bootstrap CI excluding 0, and ``rho_prototype > rho_classic``
-    under a paired one-sided Wilcoxon test with ``p < 0.01`` ([session-4 analysis]).
+    under a paired one-sided Wilcoxon test with ``p < 0.01`` ([session-4 analysis]).  This
+    metric reads the ANGLES through an assumed angle→pattern map; see :func:`firing_placement`
+    for the encoding-free companion that reads the neurons' firing instead.
     """
     patterns = decode_hidden_patterns(net, params, encoding=encoding)
-    dead = dead_hidden_neurons(net, params)
-    kept = patterns[~dead] if drop_dead else patterns
-    if kept.shape[0] == 0:
-        raise ValueError("all hidden neurons are dead — no pattern survives to score")
+    dead = dead_hidden_neurons(net, params, tol_rel=tol_rel, tol_abs=tol_abs)
+    all_dead = bool(dead.all())
+    kept = patterns[~dead] if (drop_dead and not all_dead) else patterns
     uniq = np.unique(np.asarray(codes, dtype=np.int64))
     r = covering_cost(kept, uniq)
     r_null, r_std = covering_null(uniq, kept.shape[0], n_draws=n_draws, seed=seed)
@@ -403,4 +440,237 @@ def prototype_placement(
         n_dead=int(dead.sum()),
         n_patterns=int(kept.shape[0]),
         encoding=encoding,
+        all_dead=all_dead,
+    )
+
+
+# --- encoding-free placement: what the hidden neurons actually FIRE on -------------------------
+#
+# The decoded-pattern metric above reads the ANGLES through an assumed angle→probability map,
+# and the trained Iris prototypes defeat it ([session-5 analysis]).  On
+# experiments/runs/iris/20260918T085641Z-drop the prototype neurons are ANTI-patterns: angles
+# ≈ 0 on most inputs and RX(±π) on three or four of them — "a high weight before the CR-gate
+# means that a 0-input is stressed" [Rosenhahn e-mail 2026-08-21] — so the per-block score
+# vector is nearly constant and its argmax is a coin toss between three ties.  Whatever such a
+# neuron is doing, `decode_hidden_patterns` cannot see it.
+#
+# The score below never decodes anything.  It asks the circuit: prepare a training code as a
+# basis state on the input register, run the hidden layer, read P(hidden_j = 1).  That is the
+# neuron's activation [PTQNN Fig 2, Fig 3] and it is defined for any angles, any encoding and
+# either kind of neuron.
+
+
+def _hidden_layer_factors(net: Network, params: npt.ArrayLike) -> tuple[Complex, list[Complex]]:
+    """The hidden layer regrouped input qubit by input qubit — an exact rewriting.
+
+    Returns ``(ρ₀, [U_0 … U_{n_inputs-1}])``: ``ρ₀`` is the hidden register after the part of
+    the layer that touches no input qubit (the classic ``RX(bias_j)`` gates; the prototype
+    neuron has no bias ``[PTQNN §III.B]``), and ``U_i`` is the ``(2, 2^n_hidden, 2, 2^n_hidden)``
+    unitary — indexed ``[b_out, h_out, b_in, h_in]``, qubit 0 = MSB — of every gate that touches
+    input qubit ``i``, on the ``1 + n_hidden`` qubit register "that input ⊗ hidden".
+
+    Why this is exact.  Input qubits are never coupled to each other: the hidden layer is a
+    product of blocks ``V_ij`` acting on ``(input i, hidden j)`` only.  Two blocks with
+    ``i ≠ i'`` commute — either they are supported on disjoint qubits (``j ≠ j'``), or they
+    share only ``h_j`` and there they are both ``X``-rotations by construction
+    (``CRX`` ``[PTQNN Fig 1, Fig 2]``), which commute.  So the circuit may be reordered into
+    per-input-qubit groups ``U_i = V_{i,n_hidden-1} ⋯ V_{i,0}`` (the ``j`` order inside a group
+    is the circuit's own and does NOT commute).  Each input qubit is then touched by exactly one
+    group and can be traced out immediately afterwards, which turns the layer into a sequence of
+    ``n_inputs`` channels on the ``2^n_hidden``-dimensional hidden register:
+
+        ρ ← Σ_{b∈{0,1}} K_b ρ K_b†,  K_b = ⟨b| U_i |c_i⟩  (a ``2^n_hidden`` square matrix).
+
+    Cost ``O(n_inputs · 4^n_hidden)`` per code instead of ``O(gates · 2^(n_inputs+n_hidden))``
+    — 13 ms instead of 2.5 s for the 12→4 Iris layer over 13 codes.  Pinned to the reference
+    backend in ``test_firing_matrix_agrees_with_the_reference_backend``.
+    """
+    nh = net.n_hidden
+    hidden, _ = net.unpack(params)
+    dim = 2**nh
+    rho0 = np.zeros((dim, dim), dtype=np.complex128)
+    rho0[0, 0] = 1.0
+    if net.hidden == "classic":
+        bias = ir.Circuit(nh)
+        for j, (_, b) in enumerate(hidden):
+            bias.append(ir.rx(j, b))
+        u_bias = batched.basis_columns(bias, range(nh))
+        rho0 = u_bias @ rho0 @ u_bias.conj().T
+    factors: list[Complex] = []
+    for i in range(net.n_inputs):
+        circ = ir.Circuit(1 + nh)
+        for j, (angles, last) in enumerate(hidden):
+            if net.hidden == "prototype":
+                # [PTQNN Fig 2] RX(φ_i) · CRX(θ_j) · RX(−φ_i), the un-computation included
+                circ.extend([ir.rx(0, angles[i]), ir.crx(0, 1 + j, last), ir.rx(0, -angles[i])])
+            else:
+                circ.append(ir.crx(0, 1 + j, angles[i]))  # [PTQNN Fig 1]
+        factors.append(batched.basis_columns(circ, range(1 + nh)).reshape(2, dim, 2, dim))
+    return rho0, factors
+
+
+def _hidden_bit_table(n_hidden: int) -> Real:
+    """``(2^n_hidden, n_hidden)`` — bit ``j`` of each hidden configuration (hidden qubit 0 = MSB,
+    the convention of :func:`ptqnn.tasks.iris.model.output_activation_table`)."""
+    idx = np.arange(2**n_hidden, dtype=np.int64)[:, None]
+    return np.asarray((idx >> np.arange(n_hidden - 1, -1, -1)) & 1, dtype=np.float64)
+
+
+def firing_matrix(
+    net: Network, params: npt.ArrayLike, codes: Codes, backend: Backend | None = None
+) -> Real:
+    """``(n_hidden, M)`` — ``P(hidden_j = 1 | code c)`` for the ``M`` DISTINCT codes.
+
+    Each code is prepared as a *basis* state on the input register (the per-sample read-out of
+    :func:`ptqnn.tasks.iris.model.basis_activations`, not the superposition), the hidden layer
+    is run and the marginal of hidden qubit ``j`` is read.  This is the activation the neuron
+    figures of the paper plot ``[PTQNN Fig 3]``, measured on the data.
+
+    ``backend=None`` uses the exact factorisation of :func:`_hidden_layer_factors`;
+    passing a backend takes the oracle route — the FULL network circuit
+    (:meth:`Network.circuit`, output neuron included) on the same basis state, with
+    :func:`ptqnn.backends.reference.marginal` on each hidden qubit.  The two agree exactly: the
+    output neuron only ever uses the hidden qubits as *controls* ``[PTQNN Fig 4]``, and a
+    controlled gate leaves the reduced state of its control diagonal-blockwise untouched, so it
+    cannot move ``P(hidden_j = 1)``.  For a prototype layer the value is the one *after* the
+    ``RX(−φ)`` un-computation, i.e. the hidden qubit as the output neuron sees it.
+    """
+    uniq = np.unique(np.asarray(codes, dtype=np.int64))
+    nh = net.n_hidden
+    out = np.empty((nh, uniq.size), dtype=np.float64)
+    if backend is not None:
+        for m, code in enumerate(uniq):
+            psi = iris_model.dataset_superposition(
+                np.array([code], dtype=np.int64), net.n_qubits, net.input_qubits
+            )
+            p = backend.probabilities(net.circuit(params, initial_state=psi))
+            for j, q in enumerate(net.hidden_qubits):
+                out[j, m] = ref.marginal(p, [q])[1]
+        return out
+    rho0, factors = _hidden_layer_factors(net, params)
+    bits = _hidden_bit_table(nh)
+    for m, code in enumerate(uniq):
+        rho = rho0
+        for i, u in enumerate(factors):
+            b_in = (int(code) >> (net.n_inputs - 1 - i)) & 1  # input qubit 0 = MSB of the code
+            k0, k1 = u[0, :, b_in, :], u[1, :, b_in, :]
+            rho = k0 @ rho @ k0.conj().T + k1 @ rho @ k1.conj().T
+        out[:, m] = np.real(np.diag(rho)) @ bits
+    return out
+
+
+def coverage_selectivity(firing: npt.ArrayLike) -> tuple[float, float]:
+    """``(coverage, selectivity)`` of an ``(n_hidden, M)`` firing matrix ``P_j(c)``.
+
+    * ``coverage = mean_c max_j P_j(c)`` — *every data cluster has a neuron that responds to
+      it*.  This is the firing-space reading of "the weights span the dataset"
+      ``[PTQNN Fig 9]``; it is 1 when some neuron fires with certainty on every code and 0 when
+      the layer ignores the data.
+    * ``selectivity = mean_j (max_c P_j(c) − mean_c P_j(c))`` — *a neuron responds to some codes
+      and not to others*.  A neuron with a constant response carries no information about the
+      input however loudly it fires, and scores 0; coverage alone would reward it.
+
+    ``[ASSUMPTION]`` both summaries.  The paper offers no quantitative placement criterion at
+    all (Fig 9 is a t-SNE picture), so the reduction of "prototypes sit on the data" to these
+    two numbers is ours.
+    """
+    f = np.asarray(firing, dtype=np.float64)
+    if f.ndim != 2 or f.size == 0:
+        raise ValueError(f"firing must be a non-empty (n_hidden, M) matrix, got {f.shape}")
+    coverage = float(f.max(axis=0).mean())
+    selectivity = float((f.max(axis=1) - f.mean(axis=1)).mean())
+    return coverage, selectivity
+
+
+@dataclass(frozen=True)
+class FiringScore:
+    """One :func:`firing_placement` result; see that function for the semantics."""
+
+    coverage: float
+    """``mean_c max_j P_j(c)`` of the trained layer."""
+    selectivity: float
+    """``mean_j (max_c P_j(c) − mean_c P_j(c))`` of the trained layer."""
+    coverage_null: float
+    """Mean coverage over ``n_draws`` random parameter vectors."""
+    coverage_null_std: float
+    """Standard deviation of the null coverage."""
+    selectivity_null: float
+    """Mean selectivity over the same draws."""
+    selectivity_null_std: float
+    """Standard deviation of the null selectivity."""
+    rho_f: float
+    """``(coverage − coverage_null)/coverage_null_std`` — a z-score against untrained layers."""
+    rho_f_selectivity: float
+    """The same z-score for the selectivity."""
+    n_draws: int
+    """Size of the random-parameter null."""
+    n_codes: int
+    """``M``, the number of distinct codes scored."""
+    n_hidden: int
+    """Neurons in the layer."""
+    init_scale: float
+    """Half-width of the uniform initialisation the null was drawn with."""
+
+
+def firing_placement(
+    net: Network,
+    params: npt.ArrayLike,
+    codes: Codes,
+    n_draws: int = 200,
+    seed: int = 0,
+    init_scale: float = IrisConfig.init_scale,
+    backend: Backend | None = None,
+) -> FiringScore:
+    """Encoding-free companion of :func:`prototype_placement`, scored on the neurons' FIRING.
+
+    :func:`firing_matrix` gives ``P_j(c)`` on the distinct training codes;
+    :func:`coverage_selectivity` reduces it to ``coverage`` (every code has a responder) and
+    ``selectivity`` (a responder discriminates).  Both are compared with the layer the network
+    *started* from: ``n_draws`` parameter vectors from ``net.random_params(rng, init_scale)``
+    with ``rng = np.random.default_rng(seed)`` — the very initialisation
+    :func:`train` uses (``IrisConfig.init_scale``, ``[ASSUMPTION]`` ±0.7 rad), and the same
+    ``seed`` convention as :func:`covering_null` and the experiment script, which pass the run's
+    seed.  The z-scores
+
+        ``rho_f = (coverage − mean_null)/std_null``  and the same for the selectivity
+
+    say by how many null standard deviations training moved the layer.  ``[ASSUMPTION]`` the
+    z-score (rather than, say, a rank) and the choice of the *initialisation* distribution as
+    the null: it is the only parameter distribution the paper fixes anything about, and it makes
+    "the prototype layer ends up on the data" a statement about what training did, not about the
+    architecture's prior.  A degenerate null (``std < 1e-12``) yields ``0.0``.
+
+    Reproducing ``[PTQNN Fig 9]``'s claim in these terms means: over ≥ 20 (seed, split) pairs,
+    the prototype network has ``rho_f > 0`` AND ``rho_f_selectivity > 0`` (training moved both
+    summaries up, not just one), and both exceed the classic network's on the same seeds.  A
+    single seed proves nothing — the null std is ~0.01–0.05 in coverage, so individual z-scores
+    of a few units are routine.
+    """
+    if n_draws < 1:
+        raise ValueError(f"n_draws must be ≥ 1, got {n_draws}")
+    uniq = np.unique(np.asarray(codes, dtype=np.int64))
+    coverage, selectivity = coverage_selectivity(firing_matrix(net, params, uniq, backend))
+    rng = np.random.default_rng(seed)
+    null = np.empty((n_draws, 2), dtype=np.float64)
+    for d in range(n_draws):
+        x = net.random_params(rng, scale=init_scale)
+        null[d] = coverage_selectivity(firing_matrix(net, x, uniq, backend))
+    mean, std = null.mean(axis=0), null.std(axis=0)
+
+    def z(value: float, mu: float, sigma: float) -> float:
+        return 0.0 if sigma < 1e-12 else (value - mu) / sigma
+
+    return FiringScore(
+        coverage=coverage,
+        selectivity=selectivity,
+        coverage_null=float(mean[0]),
+        coverage_null_std=float(std[0]),
+        selectivity_null=float(mean[1]),
+        selectivity_null_std=float(std[1]),
+        rho_f=z(coverage, float(mean[0]), float(std[0])),
+        rho_f_selectivity=z(selectivity, float(mean[1]), float(std[1])),
+        n_draws=int(n_draws),
+        n_codes=int(uniq.size),
+        n_hidden=int(net.n_hidden),
+        init_scale=float(init_scale),
     )
