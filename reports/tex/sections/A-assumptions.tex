@@ -8,10 +8,19 @@ Each entry is marked \code{[ASSUMPTION]} at the place in the code where it enter
 difference step $c_n = c_0/(n+1)^{0.101}$, geometric cooling; one iteration is a coordinate
 sweep.  Bit-count: $a_0 = 20$, $c_0 = 0.2$, $T_0 = 0.02$, cooling $0.7$, 20 sweeps.  Flappy:
 $a_0 = 0.4$, $c_0 = 0.25$, $T_0 = 0.05$, cooling $0.9$, 25 sweeps after 300 random restarts.
-Iris: $a_0 = 2$, decay exponent $0.3$, $c_0 = 0.1$, 40 sweeps.  ECG: 100 sweeps with restarts.
+Iris: $a_0 = 2$, decay exponent $0.3$, $c_0 = 0.1$, 40 sweeps.  ECG: 40 sweeps per restart (the
+\code{ecg\_table1.py} default; the library default is 100), 8 restarts, best by training MSE.
+\item[Iris ambiguous codes (\cref{sec:iris}).]  Under the default policy, samples sharing a
+12-bit code are merged and their labels averaged.  The author's own preprocessing removed
+``binary patterns which were assigned to two classes'' (e-mail, 2026-08-21); our
+\code{ambiguous="drop"} does that on both splits after encoding, so the test accuracy under
+it is conditional on the pattern being unambiguous (seed 0: $97.6\,\%$ on the 82 surviving test
+samples against $95.0\,\%$ on all 100); both numbers are reported.  Which split the author
+filtered, and whether before or after the k-means encoding, is not stated.
 \item[Iterative baseline (\cref{sec:bitcount}).]  The paper describes neither the sample-wise
 scheme nor its ``iteration''.  Ours: one \emph{elementary} Kiefer--Wolfowitz step per iteration
---- one coordinate, one randomly chosen input, three circuit evaluations --- on the squared error
+--- one coordinate, one randomly chosen input, four objective evaluations (two probes, the
+step, the re-scored incumbent) --- on the squared error
 of that input's activation, with only the KW step offered to the Metropolis rule
 (\code{probe\_candidates = False}), one coordinate per iteration (\code{n\_coords = 1}) and a
 fixed schedule $a = 2$, $c = 0.05$, $T = 0$ (\code{ITERATIVE\_CONFIG}); $10^5$ iterations with

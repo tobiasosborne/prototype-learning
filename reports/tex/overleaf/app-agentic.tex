@@ -112,7 +112,7 @@ matches that target with the inputs in equal superposition of all 32 strings.
 
 \Cref{fig:agentic-histograms} gives $\KL=5.5\times10^{-4}$; the submission's own printed model
 histogram, read off the figure, has $\KL\approx2.6\times10^{-3}$ against the same target.  In
-\cref{fig:agentic-convergence} (left) the median of six optimiser seeds crosses $\KL=0.005$ at
+\cref{fig:agentic-convergence} (left) the median of four optimiser seeds crosses $\KL=0.005$ at
 sweep~9 and five of six are below $10^{-3}$ at sweep~20, one stalling at $0.014$.  The
 published ``$\approx0$ in about 8 iterations'' does not define an iteration; against these
 sweeps it matches.
@@ -129,12 +129,11 @@ different quantities, because the prototype block $\RX(\varphi)\,\CRX(\theta)\,\
 does not restore the input register --- the un-computation acts on a control qubit that the
 $\CRX$ has already entangled with the hidden qubit --- so
 $P(\text{inputs}=x,\ \mathrm{out}=1)\neq
-2^{-n_{\mathrm{in}}}\,P(\mathrm{out}=1\mid\text{inputs}=x)$.  Measured: a network fitted to the
-32 per-input activations has a per-input $\KL\approx4\times10^{-4}$ while its
-superposition $\KL$ is $0.03$--$0.09$; conversely the best superposition-trained network
-($\KL=5.5\times10^{-4}$) has a per-input $\KL$ of $0.05$, and at that optimum only $1.3\,\%$ of
-the input-register population is still in the basis state it was prepared in, where uniform
-would be $3.1\,\%$.
+2^{-n_{\mathrm{in}}}\,P(\mathrm{out}=1\mid\text{inputs}=x)$.  Measured on the archived run
+\run{bitcount/20260918T111515Z}: the networks trained on the per-input activations reach a
+per-input $\KL$ below $10^{-3}$ while their superposition $\KL$, recorded alongside, never falls
+below $0.035$ (\cref{fig:agentic-convergence}, dashed).  The two observables are not
+interchangeable.
 
 Two defects of the reimplementation's own construction were real and are fixed: the annealer
 offered the finite-difference probes $x\pm c_ne_i$ as acceptance candidates alongside the
@@ -145,8 +144,9 @@ corrected baseline offers only the Kiefer--Wolfowitz step to the Metropolis rule
 coordinate per iteration, and holds $a=2$, $c=0.05$, $T=0$ fixed.
 
 The published ``iteration'' of the red curve is not defined.  Taking it to be one
-\emph{elementary} Kiefer--Wolfowitz step --- one coordinate, one input, three circuit
-evaluations, against the 36-coordinate sweep of 109 evaluations used before --- the hint to use
+\emph{elementary} Kiefer--Wolfowitz step --- one coordinate, one input, four objective
+evaluations (two probes, the step, the re-scored incumbent), against the 36-coordinate sweep
+of 109 evaluations used before --- the hint to use
 ``1000 times more iterations'' is consistent: $120\times1000\approx10^5$ steps.  That reading
 is an assumption and is the discrepancy that survives here.  Over $10^5$ elementary steps on
 four seeds, with the per-input $\KL$ monitored every $1\,000$ steps
@@ -154,8 +154,9 @@ four seeds, with the per-input $\KL$ monitored every $1\,000$ steps
 fall below $10^{-3}$ at $12\,000$, $23\,000$ and $73\,000$ steps and end at $1.1\times10^{-3}$,
 $4.4\times10^{-4}$ and $8.9\times10^{-3}$ (minima $4.9\times10^{-4}$, $3.1\times10^{-4}$,
 $9.5\times10^{-4}$), while seed 0 plateaus at $0.02$--$0.03$ (minimum $1.7\times10^{-2}$); the
-published endpoint is $\approx10^{-3}$.  The superposition $\KL$ of these same networks stays
-between $0.07$ and $0.4$ throughout --- precisely the old ``stall''.  The run costs 83 minutes
+published endpoint is $\approx10^{-3}$.  The superposition $\KL$ of these same networks never
+falls below $0.035$ over the run (range $0.035$--$0.58$, endpoints $0.07$--$0.4$) --- precisely
+the old ``stall''.  The run costs 83 minutes
 on four laptop cores, $16.7$~ms per elementary iteration uncontended.
 
 \begin{figure}[tb]
@@ -273,8 +274,8 @@ The recording behind the published Fig.~13 was then supplied by the authors (e-m
 not redistributed).  It arrives already noisy and clipped to $[0,1]$: over its first 1\,800
 samples --- the published window --- the measured noise standard deviation is $0.035$ and the
 input PSNR $27.0$~dB, against the $\sigma=0.02$ and $32.0$~dB assumed above.  Rerunning the
-identical protocol on it (\cref{tab:agentic-ecg}; run \run{ecg/20260918T132924}, 103 minutes on
-six laptop cores) splits Table~I in two.  The one-neuron result reproduces, and more strongly
+identical protocol on it (\cref{tab:agentic-ecg}; run \run{ecg/20260918T132924}, six worker processes
+on the laptop) splits Table~I in two.  The one-neuron result reproduces, and more strongly
 than published: the prototype network gains $2.8$~dB over the classic one at one hidden neuron
 where the published table gains $0.2$~dB, and it lifts a $27.0$~dB input to $36.8$~dB, so the
 smallest prototype network already does most of the denoising.  The top of the table does not
@@ -775,7 +776,7 @@ Each entry is marked \code{[ASSUMPTION]} where it enters the code.
 cooling; one iteration is a coordinate sweep.  Bit-count: $a_0=20$, $c_0=0.2$, $T_0=0.02$,
 cooling $0.7$, 20 sweeps.  Flappy: $a_0=0.4$, $c_0=0.25$, $T_0=0.05$, cooling $0.9$, 25 sweeps
 after 300 random restarts.  Iris: $a_0=2$, decay exponent $0.3$, $c_0=0.1$, 40 sweeps.  ECG:
-100 sweeps with restarts.
+40 sweeps per restart, 8 restarts, best by training MSE.
 \item[Iterative baseline.]  One \emph{elementary} Kiefer--Wolfowitz step per iteration --- one
 coordinate, one randomly chosen input, three circuit evaluations --- on the squared error of
 that input's activation; only the KW step is offered to the Metropolis rule; fixed schedule
