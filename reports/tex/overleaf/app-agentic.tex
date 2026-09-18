@@ -21,11 +21,15 @@ circuit was submitted to a quantum computer.
 Every number below comes from a \emph{run directory}: a folder holding a script's output with
 the random seed, the commit hash and the simulator backend that produced it, named by time
 stamp (e.g.\ \run{bitcount\_noise/20260820T145335Z}) and quoted throughout.  Open choices are
-listed in \cref{app:assumptions}, calibration provenance in \cref{app:provenance}.  All
-simulations ran on one workstation (64 cores, one RTX~3090) with no run exceeding about two
-hours; noise-aware training of the 11-qubit bit-count network ($\approx13$~h for its grid) and
-the full ECG/Iris noise grid ($\approx8$~h) were therefore not run, and are reported as not run
-rather than approximated.
+listed in \cref{app:assumptions}, calibration provenance in \cref{app:provenance}.  Two
+machines were used and every run directory records which: the August 2026 runs --- the
+reproduction, the noise study and the hardware plan --- on one workstation (64 cores, one
+RTX~3090), and the September 2026 reruns (\run{bitcount/20260918T111515Z},
+\run{ecg/20260918T132924}, \run{iris/20260918T085641Z-drop}) on a 12-thread laptop with no GPU,
+whose wall times are quoted with the number of cores used.  No run was allowed to exceed about
+two hours; noise-aware training of the 11-qubit bit-count network ($\approx13$~h for its grid)
+and the full ECG/Iris noise grid ($\approx8$~h) were therefore not run, and are reported as not
+run rather than approximated.
 
 
 \section{Notation, optimiser and simulators}
@@ -113,16 +117,46 @@ sweep~9 and five of six are below $10^{-3}$ at sweep~20, one stalling at $0.014$
 published ``$\approx0$ in about 8 iterations'' does not define an iteration; against these
 sweeps it matches.
 
-\paragraph{The iterative baseline does not reproduce.}
+\paragraph{The iterative baseline: the observable, not the scheme.}
 \Cref{fig:OptConv} also shows a slower iterative curve reaching $\approx0$ by about 120
 iterations, described only as ``optimizing examples iteratively''; the companion
 paper~\cite{rosenhahn2026stochasticneuralnetworksquantum} gives sample-wise squared-error
-updates but no schedule.  One optimiser sweep on the squared error of one randomly chosen input
-per iteration stalls at a median $\KL\approx0.15$ after 200 iterations
-(\cref{fig:agentic-convergence}, right), and a sweep over $a_0\in\{2,5,20,50,100\}$, two decay
-exponents, both update modes and a scaled per-sample target left the median between $0.05$ and
-$0.3$ (best single run $0.046$): updating on one input at a time thrashes between inputs.
-Whatever the authors' scheme was, this is not it.
+updates but no schedule.  The earlier finding that such a construction stalls at
+$\KL\approx0.15$ was an observable mismatch rather than a failure of the scheme.  A sample-wise
+scheme trains the \emph{per-input activation} $\Pout$ on one random basis input per step, while
+it was being graded with the superposition $\KL$ of \cref{eq:agentic-model}.  The two are
+different quantities, because the prototype block $\RX(\varphi)\,\CRX(\theta)\,\RX(-\varphi)$
+does not restore the input register --- the un-computation acts on a control qubit that the
+$\CRX$ has already entangled with the hidden qubit --- so
+$P(\text{inputs}=x,\ \mathrm{out}=1)\neq
+2^{-n_{\mathrm{in}}}\,P(\mathrm{out}=1\mid\text{inputs}=x)$.  Measured: a network fitted to the
+32 per-input activations has a per-input $\KL\approx4\times10^{-4}$ while its
+superposition $\KL$ is $0.03$--$0.09$; conversely the best superposition-trained network
+($\KL=5.5\times10^{-4}$) has a per-input $\KL$ of $0.05$, and at that optimum only $1.3\,\%$ of
+the input-register population is still in the basis state it was prepared in, where uniform
+would be $3.1\,\%$.
+
+Two defects of the reimplementation's own construction were real and are fixed: the annealer
+offered the finite-difference probes $x\pm c_ne_i$ as acceptance candidates alongside the
+proposed step, which on a one-example objective degenerates into a greedy random walk; and the
+schedules for $a_n$, $c_n$ and the temperature advanced once per \emph{example}, so the
+temperature had underflowed by $n\approx50$ while the probe amplitude never shrank.  The
+corrected baseline offers only the Kiefer--Wolfowitz step to the Metropolis rule, moves one
+coordinate per iteration, and holds $a=2$, $c=0.05$, $T=0$ fixed.
+
+The published ``iteration'' of the red curve is not defined.  Taking it to be one
+\emph{elementary} Kiefer--Wolfowitz step --- one coordinate, one input, three circuit
+evaluations, against the 36-coordinate sweep of 109 evaluations used before --- the hint to use
+``1000 times more iterations'' is consistent: $120\times1000\approx10^5$ steps.  That reading
+is an assumption and is the discrepancy that survives here.  Over $10^5$ elementary steps on
+four seeds, with the per-input $\KL$ monitored every $1\,000$ steps
+(\cref{fig:agentic-convergence}, right; run \run{bitcount/20260918T111515Z}), seeds 3, 2 and 1
+fall below $10^{-3}$ at $12\,000$, $23\,000$ and $73\,000$ steps and end at $1.1\times10^{-3}$,
+$4.4\times10^{-4}$ and $8.9\times10^{-3}$ (minima $4.9\times10^{-4}$, $3.1\times10^{-4}$,
+$9.5\times10^{-4}$), while seed 0 plateaus at $0.02$--$0.03$ (minimum $1.7\times10^{-2}$); the
+published endpoint is $\approx10^{-3}$.  The superposition $\KL$ of these same networks stays
+between $0.07$ and $0.4$ throughout --- precisely the old ``stall''.  The run costs 83 minutes
+on four laptop cores, $16.7$~ms per elementary iteration uncontended.
 
 \begin{figure}[tb]
 \centering
@@ -136,9 +170,12 @@ Whatever the authors' scheme was, this is not it.
 \begin{figure}[tb]
 \centering
 \includegraphics[width=\columnwidth]{fig_bitcount_convergence}
-\caption{Left: superposition training, six optimiser seeds and their median.  Right: the
-reimplementation's construction of the iterative baseline, which does not reach the
-published curve.  Run \run{bitcount/20260820T135930Z}.}
+\caption{Left: superposition training, $\KL$ of \cref{eq:agentic-model} per sweep, six
+optimiser seeds and their median.  Right: the iterative baseline in its own observable --- the
+$\KL$ over the 32 per-input activations against the elementary iteration count (one coordinate,
+one input, three circuit evaluations), four seeds; dashed, the superposition $\KL$ of the same
+networks, which does not follow it.  Runs \run{bitcount/20260820T135930Z} (left) and
+\run{bitcount/20260918T111515Z} (right).}
 \label{fig:agentic-convergence}
 \end{figure}
 
@@ -215,21 +252,65 @@ line is the decision boundary $\Pout=\tfrac12$ (flap to its right), the dotted d
 \label{app:ecg}
 
 Five consecutive noisy samples enter five input qubits; one to three prototype hidden neurons
-and one output predict the clean centre sample as $\Pout$.  The recording is not identified;
-the published trace is a smooth two-beat signal of 1\,800 samples in $[0,1]$ with additive
-noise of standard deviation $\approx0.03$.  A synthetic ECG of McSharry form was generated to
-match it, Gaussian noise of $\sigma=0.02$ added (noisy input $32.0$~dB), the first half used
-for training and the second for test, and the experiment repeated on PhysioNet MIT-BIH
-record~100~\cite{moody2001mitbih}.
+and one output predict the clean centre sample as $\Pout$.  The recording is not identified in
+the text; the published trace is a smooth two-beat signal of 1\,800 samples in $[0,1]$ with
+additive noise of standard deviation $\approx0.03$.  A synthetic ECG of McSharry form was
+generated to match it, Gaussian noise of $\sigma=0.02$ added (noisy input $32.0$~dB), the first
+half used for training and the second for test, and the experiment repeated on PhysioNet
+MIT-BIH record~100~\cite{moody2001mitbih}.
 
-PSNR is $37.4$, $38.0$ and $38.1$~dB for one, two and three prototype neurons against the
-published $32.9$, $40.00$ and $40.04$: within about $2$~dB at two and three neurons, and $4$~dB
-\emph{above} the published value at one neuron (\cref{fig:agentic-ecg-trace}).  The prototype
-network beats the classic one at one and two neurons and on every SSIM; the classic one wins at
-three.  The numbers cannot match exactly because the signal is not the authors' own.  The
-alternative encoding $\theta=\pi s$ costs $0.6$--$7$~dB here, independent evidence for
-\cref{eq:agentic-encoding}.  On MIT-BIH record~100 (run \run{ecg/20260820T165912}) the same
-networks reach $36$--$38$~dB.
+On that synthetic signal PSNR is $37.4$, $38.0$ and $38.1$~dB for one, two and three prototype
+neurons against the published $32.9$, $40.00$ and $40.04$: within about $2$~dB at two and three
+neurons, and $4$~dB \emph{above} the published value at one neuron
+(\cref{fig:agentic-ecg-trace}).  The prototype network beats the classic one at one and two
+neurons and on every SSIM; the classic one wins at three.  The alternative encoding
+$\theta=\pi s$ costs $0.6$--$7$~dB here, independent evidence for \cref{eq:agentic-encoding}.
+On MIT-BIH record~100 (run \run{ecg/20260820T165912}) the same networks reach $36$--$38$~dB.
+
+\paragraph{The original recording.}
+The recording behind the published Fig.~13 was then supplied by the authors (e-mail of
+21 August 2026; two MATLAB files, identified by their SHA256 digests in the run directory and
+not redistributed).  It arrives already noisy and clipped to $[0,1]$: over its first 1\,800
+samples --- the published window --- the measured noise standard deviation is $0.035$ and the
+input PSNR $27.0$~dB, against the $\sigma=0.02$ and $32.0$~dB assumed above.  Rerunning the
+identical protocol on it (\cref{tab:agentic-ecg}; run \run{ecg/20260918T132924}, 103 minutes on
+six laptop cores) splits Table~I in two.  The one-neuron result reproduces, and more strongly
+than published: the prototype network gains $2.8$~dB over the classic one at one hidden neuron
+where the published table gains $0.2$~dB, and it lifts a $27.0$~dB input to $36.8$~dB, so the
+smallest prototype network already does most of the denoising.  The top of the table does not
+reproduce: the two- and three-neuron prototype cells fall $2.5$ and $3.2$~dB short, and at three
+neurons the ordering inverts (classic $38.02$~dB against prototype $36.86$~dB).  Whole-signal
+SSIM is $0.997$--$0.999$ in every cell and separates nothing; the 7-sample windowed SSIM,
+$0.84$--$0.93$, ranks the cells as the PSNR does.
+
+With the signal no longer a candidate explanation this is recorded as a discrepancy and not
+tuned.  Three candidates remain: the noise level and the clipping of the supplied trace (a trace
+clipped to $[0,1]$ is not the additive-Gaussian model the loss assumes); the restart and
+selection protocol, which the text does not give and which here is 8 restarts per cell with the
+best taken by training MSE; and the train/test split, which the text does not give either and
+which here is first half against second.  The full $7\,700$-sample recording was not run.
+
+\begin{table*}[t]
+\caption{Table~I recomputed on the authors' own recording (first 1\,800 samples, the published
+Fig.~13 window; noisy input $27.0$~dB).  PSNR in dB on the test half.  Whole-signal SSIM is
+$0.997$--$0.999$ and windowed SSIM $0.84$--$0.93$ in every cell, so neither is tabulated.  The
+memo row is the synthetic-signal result above, whose input is a cleaner $32.0$~dB and therefore
+not directly comparable.  Run \run{ecg/20260918T132924}.}
+\label{tab:agentic-ecg}
+\begin{tabular}{@{}l ccc ccc@{}}
+\toprule
+& \multicolumn{3}{c}{CQNN (classic)} & \multicolumn{3}{c}{PTQNN (prototype)} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+hidden neurons & 1 & 2 & 3 & 1 & 2 & 3 \\
+\midrule
+published Table~I & $32.72$ & $38.20$ & $39.65$ & $32.90$ & $40.00$ & $40.04$ \\
+reimplementation, same recording & $33.97$ & $36.33$ & $38.02$ & $36.80$ & $37.48$ & $36.86$ \\
+difference & $+1.25$ & $-1.87$ & $-1.63$ & $+3.90$ & $-2.52$ & $-3.18$ \\
+\addlinespace
+memo: synthetic signal & --- & --- & --- & $37.4$ & $38.0$ & $38.1$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 \begin{figure}[tb]
 \centering
@@ -633,9 +714,15 @@ sequential, $\delta_0 = 0.005$, cap $10\,000$ & 100 & 110 & 4.50 & 4358 \\
 \begin{enumerate}
 \item \textbf{The central claims reproduce.}  Activation surface, bit-count histogram and
 convergence, Iris overfitting contrast, perfect Flappy play on a clone, ECG denoising within
-2~dB on a different signal.  What does not: the iterative baseline of \cref{fig:OptConv} (this
-construction stalls at $\KL\approx0.15$) and the weight picture of \cref{fig:tsne}; both are
-under-specified in the text.
+2~dB on a synthetic signal --- though on the authors' own recording only the one-neuron cell of
+Table~I reproduces, the two- and three-neuron prototype cells falling $2.5$--$3.2$~dB short
+(\cref{app:ecg}).  What does not: the weight picture of \cref{fig:tsne}, which is
+under-specified in the text.  The iterative baseline of \cref{fig:OptConv} was a second such
+failure until it turned out to have been graded with the wrong quantity --- a scheme that trains
+one input at a time moves the per-input activations, not the superposition distribution of
+\cref{eq:agentic-model}, and the prototype block leaves the input register entangled with the
+hidden qubits --- and in its own observable it reaches $\approx10^{-3}$ on three seeds of four
+(\cref{app:bitcount}).  Grade a scheme in the observable it optimises.
 
 \item \textbf{Reading figures is part of reproduction.}  The bit-count target
 $(\text{ones}+1)/112$, the Iris label weighting $(\ell+1)^2$ and the angle encoding
@@ -689,8 +776,12 @@ cooling; one iteration is a coordinate sweep.  Bit-count: $a_0=20$, $c_0=0.2$, $
 cooling $0.7$, 20 sweeps.  Flappy: $a_0=0.4$, $c_0=0.25$, $T_0=0.05$, cooling $0.9$, 25 sweeps
 after 300 random restarts.  Iris: $a_0=2$, decay exponent $0.3$, $c_0=0.1$, 40 sweeps.  ECG:
 100 sweeps with restarts.
-\item[Iterative baseline.]  One optimiser sweep on the squared error of one random input per
-iteration.
+\item[Iterative baseline.]  One \emph{elementary} Kiefer--Wolfowitz step per iteration --- one
+coordinate, one randomly chosen input, three circuit evaluations --- on the squared error of
+that input's activation; only the KW step is offered to the Metropolis rule; fixed schedule
+$a=2$, $c=0.05$, $T=0$; $10^5$ iterations with the per-input $\KL$ monitored every $1\,000$.
+Identifying the published plotted iteration with this elementary step is itself the assumption
+that makes its $\approx120$ iterations and these $10^5$ steps comparable.
 \item[Angle encoding.]  $\theta=2\arcsin\sqrt s$, pinned by a printed angle in the companion
 paper; $\theta=\pi s$ tested as an ablation.
 \item[KL regularisation.]  Model probability floored at $10^{-12}$ inside the logarithm.
@@ -703,9 +794,13 @@ predicted by nearest rounding of the read-out weight.
 spacing 180, gravity 1; reward 0.01 per frame plus 1 per pipe; tracking term
 $|{\rm height}-{\rm gap}|$ with weight 1; 5 training episodes of 1\,500 frames, 20 held-out
 seeds 5--24, 5\,000-frame cap (110 pipes); decisions cached on a $65\times65$ grid.
-\item[ECG.]  Synthetic McSharry-form signal tuned to the published trace, and MIT-BIH
-record 100; Gaussian noise $\sigma=0.02$; mirror-padded edges; first half train, second half
-test; PSNR with $R$ the range of the clean signal; SSIM in a 7-sample sliding window.
+\item[ECG.]  Three signals: a synthetic McSharry-form signal tuned to the published trace with
+Gaussian noise $\sigma=0.02$; MIT-BIH record 100; and the authors' own recording, of which the
+first 1\,800 samples --- the published window --- are used, the full 7\,700 exceeding the
+compute ceiling.  On that recording the noise is the recording's own ($\sigma=0.035$, input
+$27.0$~dB) and not a choice.  Assumed for all three: mirror-padded edges; first half train,
+second half test; 8 optimiser restarts per cell with the best taken by training MSE; PSNR with
+$R$ the range of the clean signal; SSIM both whole-signal and in a 7-sample sliding window.
 \item[Noise model.]  Depolarising at the vendor's average gate error, relaxation during gates
 and as-soon-as-possible idling, readout confusion; medians where vendors publish per-qubit
 tables; no crosstalk, since no vendor publishes a usable number.  Quantinuum's idle error is
@@ -765,3 +860,9 @@ readout error, no $T_1$ or $T_2$.
 The per-field table is not reproduced here --- some sixty rows with quotations --- but it is
 the ground truth every number in this appendix rests on, and it is one command away in the
 repository at \repourl.
+
+One experimental input is not calibration data: the ECG recording of \cref{app:ecg}, supplied by
+the authors by e-mail on 21 August 2026 as two MATLAB files.  It is the authors' data and is not
+redistributed; instead the loader writes the SHA256 digest of each file into the \code{meta.json}
+of every run that uses it, so run \run{ecg/20260918T132924} identifies the input exactly without
+carrying it.

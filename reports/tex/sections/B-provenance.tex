@@ -37,3 +37,19 @@ error, $T_1$ or $T_2$.
 The per-field table is not reproduced here --- it runs to some sixty rows with quotations ---
 but it is the ground truth the numbers in this document rest on, and it is a single command
 away: \code{uv run python experiments/hardware\_plan.py}.
+
+\paragraph{One input that is not calibration data: the ECG recording.}
+The ECG experiment of \cref{sec:ecg} also runs on the paper's own recording, sent to us by
+B.~Rosenhahn by e-mail on 21 August 2026 as two MATLAB files.  They are the authors' data and are
+not redistributed with this repository; instead the loader (\code{-{}-source mailed}) writes their
+SHA256 digests into the \code{meta.json} of every run that uses them, so a run directory
+identifies the input exactly without carrying it:
+
+\begin{description}[leftmargin=1.2em,style=nextline,itemsep=2pt]
+\item[\code{ecgfilteredData.mat} --- the clean trace.]
+\code{9ed65523b30e588012dba0ece34e8d0bb6951254357cf0757ef1692b7439b456}
+\item[\code{ecgnoiseData.mat} --- the noisy trace, already clipped to {$[0,1]$}.]
+\code{cc94548d1c40b63b597b532edbf0bd198ac3a12ac9253d0efc4b40255d0753b9}
+\end{description}
+
+\noindent Run \run{ecg/20260918T132924} records both digests together with the sender and date.

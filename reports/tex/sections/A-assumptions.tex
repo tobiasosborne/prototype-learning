@@ -9,8 +9,16 @@ difference step $c_n = c_0/(n+1)^{0.101}$, geometric cooling; one iteration is a
 sweep.  Bit-count: $a_0 = 20$, $c_0 = 0.2$, $T_0 = 0.02$, cooling $0.7$, 20 sweeps.  Flappy:
 $a_0 = 0.4$, $c_0 = 0.25$, $T_0 = 0.05$, cooling $0.9$, 25 sweeps after 300 random restarts.
 Iris: $a_0 = 2$, decay exponent $0.3$, $c_0 = 0.1$, 40 sweeps.  ECG: 100 sweeps with restarts.
-\item[Iterative baseline (\cref{sec:bitcount}).]  One optimiser sweep on the squared error of one
-random input per iteration; the paper does not describe its scheme.
+\item[Iterative baseline (\cref{sec:bitcount}).]  The paper describes neither the sample-wise
+scheme nor its ``iteration''.  Ours: one \emph{elementary} Kiefer--Wolfowitz step per iteration
+--- one coordinate, one randomly chosen input, three circuit evaluations --- on the squared error
+of that input's activation, with only the KW step offered to the Metropolis rule
+(\code{probe\_candidates = False}), one coordinate per iteration (\code{n\_coords = 1}) and a
+fixed schedule $a = 2$, $c = 0.05$, $T = 0$ (\code{ITERATIVE\_CONFIG}); $10^5$ iterations with
+the per-input $\KL$ monitored every $1\,000$.  Identifying the paper's plotted iteration with
+this elementary step is itself the assumption that makes its $\approx 120$ iterations and our
+$10^5$ steps comparable; the authors' hint to use ``1000 times more iterations'' is consistent
+with it.
 \item[Angle encoding (\cref{eq:encoding}).]  $\theta = 2\arcsin\sqrt s$, pinned by a printed
 angle in \cite{snn}; $\theta = \pi s$ tested as an ablation.
 \item[KL regularisation.]  The model probability is floored at $10^{-12}$ inside the logarithm.
@@ -24,9 +32,16 @@ from Fig.~8; labels predicted by nearest rounding of the read-out weight.
 policy); reward 0.01 per frame plus 1 per pipe, tracking term $|{\rm height}-{\rm gap}|$ with
 weight 1; 5 training episodes of 1\,500 frames, 20 held-out seeds 5--24, 5\,000-frame cap (110
 pipes); decisions cached on a $65\times65$ grid of observations.
-\item[ECG (\cref{sec:ecg}).]  Synthetic McSharry-form signal tuned to Fig.~13 and MIT-BIH
-record 100; Gaussian noise $\sigma = 0.02$; mirror-padded edges; first half train, second half
-test; PSNR with $R = $ range of the clean signal; SSIM in a 7-sample sliding window.
+\item[ECG (\cref{sec:ecg}).]  Three signals: a synthetic McSharry-form signal tuned to Fig.~13
+with Gaussian noise $\sigma = 0.02$; MIT-BIH record 100; and the paper's own recording, sent by
+the first author on 21 August 2026 and loaded by \code{-{}-source mailed}, of which we use the
+first $1\,800$ samples --- the Fig.~13 window --- because the full $7\,700$ exceed the compute
+ceiling.  On that recording nothing about the noise is ours: it arrives already noisy and clipped
+to $[0,1]$, with measured $\sigma = 0.035$ and input PSNR $27.0$~dB.  What remains assumed for
+all three signals: mirror-padded edges; first half train, second half test (the paper gives no
+split); 8 optimiser restarts per cell with the best taken by training MSE (the paper gives no
+restart or selection protocol); PSNR with $R = $ range of the clean signal; SSIM both
+whole-signal (Eq.~(8)) and in a 7-sample sliding window.
 \item[Noise model (\cref{sec:devices}).]  Depolarising at the vendor's average gate error,
 relaxation during gates and as-soon-as-possible idling, readout confusion; median values where
 vendors publish per-qubit tables; no crosstalk (no vendor publishes a usable number); where a

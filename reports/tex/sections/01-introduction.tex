@@ -39,11 +39,17 @@ number of a quantum computer carries, in the repository, the URL it was read fro
 a verbatim quotation (\cref{app:provenance}).
 
 \paragraph{Compute discipline.}
-All simulations were run on one workstation (64 cores, one RTX~3090 GPU).  No single run was
-allowed to exceed about two hours; two studies that would have (noise-aware training of the
-11-qubit bit-count network, $\approx 13$ hours for its grid; the full ECG/Iris noise grid,
-$\approx 8$ hours) were deliberately \emph{not} run and are reported as such, with their measured
-per-cell cost, rather than approximated.
+Two machines were used and every run directory records which.  The August 2026 runs --- the
+reproduction, the noise study and the hardware plan, i.e.\ everything whose time stamp begins
+\code{202608} --- ran on one workstation (64 cores, one RTX~3090 GPU).  The September 2026 runs
+(\run{bitcount/20260918T111515Z}, \run{ecg/20260918T132924},
+\run{iris/20260918T085641Z-drop}) ran on a 12-thread laptop with no GPU, and their wall times are
+quoted with the number of cores actually used.  No single run was allowed to exceed about two
+hours; two studies that would have (noise-aware training of the 11-qubit bit-count network,
+$\approx 13$ hours for its grid; the full ECG/Iris noise grid, $\approx 8$ hours) were
+deliberately \emph{not} run and are reported as such, with their measured per-cell cost, rather
+than approximated.  The same ceiling is why the ECG reruns use the $1\,800$-sample Fig.~13
+window and not the full recording (\cref{sec:ecg}).
 
 \begin{table}[t]
 \centering\small
@@ -51,19 +57,19 @@ per-cell cost, rather than approximated.
 qualitative claim and the quantitative value (within the precision the paper's figure allows)
 both come out; ``discrepancy'' means they do not, and the text explains what we tried.}
 \label{tab:scoreboard}
-\begin{tabularx}{\textwidth}{@{}l l X l@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.21\textwidth} >{\raggedright\arraybackslash}p{0.21\textwidth} X >{\raggedright\arraybackslash}p{0.16\textwidth}@{}}
 \toprule
 Paper item & Paper value & Ours & Status \\
 \midrule
 Fig.~3, activation surface & $(0,1)\!\to\!\max$, $(1,0)\!\to\!0$ & $1.000$ / $0.000$ / $0.500$ / $0.500$ at the corners & reproduced \\
 Fig.~5, target histogram & bar heights & $(\text{number of ones}+1)/112$, all 32 bars within $0.0002$ & reproduced \\
 Fig.~6, superposition training & $\KL\approx 0$ in $\approx 8$ iterations & median $<0.005$ at sweep 9; $5/6$ seeds $<10^{-3}$ at 20 & reproduced \\
-Fig.~6, iterative baseline & $\KL\approx 0$ by $\approx 120$ & stalls at $\approx 0.15$ after 200 (our construction) & discrepancy \\
+Fig.~6, iterative baseline & $\KL\approx 0$ by $\approx 120$ & per-input $\KL<10^{-3}$ for $3/4$ seeds within $10^5$ elementary steps; the superposition $\KL$ is a different observable & reproduced in the per-input observable; iteration unit assumed \\
 Fig.~7, Iris learning curves & classic overfits, prototype does not & classic test loss rises after 1--4 sweeps; prototype's falls monotonically & reproduced \\
 Iris accuracy & $\approx 98\,\%$ & $95$ / $91$ / $98\,\%$ on three splits (ceilings $97$ / $99$ / $99\,\%$) & in range \\
 Fig.~9, Iris weight picture & prototype weights span the data & both weight sets cluster away from the data & discrepancy \\
 Flappy Bird & ``plays perfectly'' & $110/110$ pipes (the cap) on $20/20$ held-out games & reproduced (own clone) \\
-Table~I, ECG PSNR (1/2/3 hidden) & $32.9$ / $40.00$ / $40.04$~dB & $37.4$ / $38.0$ / $38.1$~dB (synthetic signal) & within $\approx 2$~dB \\
+Table~I, ECG PSNR (1/2/3 hidden) & $32.9$ / $40.00$ / $40.04$~dB & $37.4$ / $38.0$ / $38.1$~dB (synthetic signal); $36.8$ / $37.5$ / $36.9$~dB on the paper's own recording & within $\approx 2$~dB on synthetic; on the original recording 1-neuron reproduced, 2/3-neuron $2.5$--$3$~dB short \\
 \bottomrule
 \end{tabularx}
 \end{table}
