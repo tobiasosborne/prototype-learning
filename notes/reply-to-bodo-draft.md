@@ -1,0 +1,34 @@
+Dear Bodo,
+
+good questions - several land where the report says too little. Figure numbers are ours.
+
+Fig 10: the prototype wins under every preset (KL 0.0007 on H2-1 to 0.0062 on Garnet, classic 0.0014-0.0084), but the right panel is the point: noise displaces both equally (KL(clean||noisy) 0.0021 vs 0.0022, TV 0.005-0.039). Same gate counts, so the prototype's edge is its noiseless fit, not robustness.
+
+Figs 11 and 12: one sentence each, agreed. Fig 11 only shows linear response (Fez scaled by s: KL ~ s^1.7, TV ~ s^0.95). Fig 12 belongs in the shots section: the bias of a KL from N shots, 31.8/N, which sets the shot budget and explains why sampled training stalls.
+
+Fig 13: yes, with one caveat. Noise in the training loop recovers the noisy KL by x158 (prototype) and x361 (classic), but those parameters are worse noiselessly: the optimiser folds the channel into the angles rather than finding robust ones. Calibration per machine, then, not robustness.
+
+Fig 14: not quite - all seven machines play perfectly (110/110 pipes, 20 held-out games), 1.5-4 % of frames flipping. Fez is not the most tolerant, just the one I stress-tested (fullest calibration); the right panel scales its errors by s: 60 % perfect games at s=2, none at s=4 - two-fold headroom.
+
+Fig 16: indicative only - 8 ECG windows instead of 898, 16 Iris trajectories instead of 2000; the Iris variance is sampling, not physics. The asymmetry is real, though: ECG reads one expectation value, Iris a conditional distribution over 4096 strings, directly exposed to probability leaking out of its 20-code support. P1 > C1 is not readable off it either - the prototype cells even gain 3.8 dB under Fez, a small-sample artefact; Fig 10 carries that claim.
+
+Figs 17/18: the shading in 17 is routing - hatched = gates spent on SWAPs, three each: 82 % of bit-count's 327 two-qubit gates on heavy-hex, against 60 all-to-all. In 18 the stacked bars are -log F by error source. Hardware analysis, yes - and that is the point: it settles Quantinuum vs Garnet. Flappy reaches F ~ 0.92 (H2-1), 0.83 (Forte), 0.63 (Fez), 0.24 (Garnet); bit-count 0.81/0.64/0.48/0.008. Garnet is the cheapest job we costed and buys nothing: ions first.
+
+Shots: report, not optimise, with two results: Wald's sequential rule wins every game at 2191 shots per frame against 10,000 fixed (factor 4.6); and the plug-in bias above, which shows the loss, not the optimiser, limits sampled training.
+
+Costs: nothing was paid, nothing ran on hardware. Every number is a simulator run under vendor calibration data; the cost table is what their price lists imply. Say an agent did it, yes, but precisely: no quantum computer was used - the text should read "simulators matched to calibration data".
+
+Iris: your policy is implemented exactly - codes with two labels can be dropped as well as merged; we report both.
+
+Iterative scheme: the KL ~ 0.15 stall was our measurement, not the scheme. We graded sample-wise training with the superposition observable; the prototype block does not restore the input register, so P(x, out=1) is not 2^-n P(out=1|x). Graded per input, with one elementary KW step per iteration rather than a 36-coordinate sweep, it converges - consistent with your 1000 times more iterations. [NUMBERS]
+
+t-SNE: our mapping already used the inverse pattern cos^2(phi/2). The picture is replaced by a covering cost of the training codes by the decoded prototype patterns, against a random null and the best 4-subset. [NUMBERS]
+
+ECG: running on your recording now, 1800 samples and full trace. [NUMBERS] Its input PSNR is ~27.5 dB and the noise std 0.035, against our 0.02 (32 dB in) - so Table I's 32.9 dB for one neuron is the +5 dB gain we measured, from a lower start.
+
+Overleaf: a drop-in folder is ready - preamble snippet, main-text subsection, compiling appendix. Your pasted appendix uses macros your preamble lacks (\KL, \Pout, \cref, booktabs, siunitx), so it will not compile; the drop-in fixes that. One query: l. 387 has 4,500,000 in ten days, the submission 450,000 in six - which? On authorship, an acknowledgement is entirely fine by me.
+
+Shall we talk next week? [SLOTS] both suit me.
+
+Best wishes,
+Tobias

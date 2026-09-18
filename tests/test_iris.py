@@ -57,6 +57,55 @@ def test_collisions_are_counted_and_merged_by_average_label(split: iris_data.Iri
     )
 
 
+def test_drop_ambiguous_codes_removes_codes_with_two_labels() -> None:
+    # [Rosenhahn e-mail 2026-08-21] "On the iris-dataset I should have mentioned that I removed
+    # binary patterns which were assigned to two classes."  Code 5 carries labels 0 and 1 → the
+    # whole code goes; code 7 (twice, same label) and 9 stay, in order.  n_dropped counts
+    # DISTINCT codes, not samples.
+    codes = np.array([5, 5, 7, 7, 9], dtype=np.int64)
+    labels = np.array([0, 1, 2, 2, 1], dtype=np.int64)
+    kept_codes, kept_labels, n_dropped = iris_data.drop_ambiguous_codes(codes, labels)
+    np.testing.assert_array_equal(kept_codes, [7, 7, 9])
+    np.testing.assert_array_equal(kept_labels, [2, 2, 1])
+    assert n_dropped == 1
+
+
+def test_drop_policy_filters_both_splits_and_reaches_ceiling_one() -> None:
+    # [Rosenhahn e-mail 2026-08-21] with the drop policy no code carries two classes, so the
+    # encoding ceiling is 1.0 by construction and every remaining duplicate is same-class.
+    split = iris_data.load_split(seed=0, ambiguous="drop")
+    assert split.ambiguous == "drop"
+    assert split.train_collisions == 0
+    assert split.test_collisions == 0
+    assert split.n_dropped_train > 0 and split.n_dropped_test > 0
+    assert iris_data.encoding_accuracy_ceiling(split.train_codes, split.train_labels) == 1.0
+    assert iris_data.encoding_accuracy_ceiling(split.test_codes, split.test_labels) == 1.0
+    s = split.summary()
+    assert s["ambiguous"] == "drop"
+    assert s["n_dropped_train"] == split.n_dropped_train
+    assert s["n_dropped_test"] == split.n_dropped_test
+
+
+def test_default_split_is_bit_for_bit_the_merge_split() -> None:
+    # The drop policy must not move any existing number: the default load_split equals an
+    # explicit ambiguous="merge" call on every array, and records zero drops.
+    default = iris_data.load_split(seed=0)
+    merge = iris_data.load_split(seed=0, ambiguous="merge")
+    assert default.ambiguous == "merge"
+    for a, b in (
+        (default.train_index, merge.train_index),
+        (default.test_index, merge.test_index),
+        (default.train_codes, merge.train_codes),
+        (default.train_labels, merge.train_labels),
+        (default.test_codes, merge.test_codes),
+        (default.test_labels, merge.test_labels),
+        (default.centers, merge.centers),
+    ):
+        np.testing.assert_array_equal(a, b)
+    assert default.n_dropped_train == 0 and default.n_dropped_test == 0
+    assert merge.n_dropped_train == 0 and merge.n_dropped_test == 0
+
+
 def test_superposition_state_is_normalised_and_supported_on_the_codes() -> None:
     net = Network(n_inputs=12, n_hidden=2)
     codes = np.array([0b100100100100, 0b010010010010, 0b100100100100], dtype=np.int64)
@@ -253,3 +302,81 @@ def test_prototype_network_reaches_ninety_percent_test_accuracy() -> None:
     uniq, act = iris_model.basis_activations(net, res.params, split.test_codes)
     per_sample = iris_model.labels_from_values(act)[np.searchsorted(uniq, split.test_codes)]
     assert float(np.mean(per_sample == split.test_labels)) >= 0.90
+
+
+# --- quantitative prototype-placement metric (pi-04; replaces Fig 9 t-SNE as evidence) ---
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_decode_hidden_patterns_is_one_hot_per_block_and_monotone_invariant(
+    hidden: str,
+) -> None:
+    # The decoded pattern is a valid Iris code: exactly one 1-bit per 3-bit feature block
+    # ([SNN §IV.B] one-hot-per-feature encoding).  [Rosenhahn e-mail 2026-08-21] calls the
+    # cos²(φ/2) map (prototype) the "inverse" encoding; it is the Fig 9 pattern map.
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    params = net.random_params(np.random.default_rng(1), scale=0.7)
+    for enc in ("inverse", "direct"):
+        pats = iris_train.decode_hidden_patterns(net, params, encoding=enc)  # type: ignore[arg-type]
+        assert pats.shape == (4, 12) and pats.dtype == np.uint8
+        np.testing.assert_array_equal(pats.reshape(4, 4, 3).sum(axis=2), 1)
+    # "inverse" decoding is exactly the Fig 9 pattern map, block-argmaxed
+    w = iris_train.hidden_layer_weights_for_tsne(net, params, as_pattern=True)
+    np.testing.assert_array_equal(
+        iris_train.decode_hidden_patterns(net, params, encoding="inverse"),
+        iris_train.block_argmax(w),
+    )
+    # the block argmax only reads the per-block ordering, so it is invariant under any
+    # monotone map of the pattern matrix (angles are NOT scale-free — 2·params is a
+    # different neuron — hence the invariance is tested on m, not on the parameters)
+    np.testing.assert_array_equal(iris_train.block_argmax(w), iris_train.block_argmax(w**3))
+
+
+def test_covering_cost_vanishes_on_the_codes_themselves(split: iris_data.IrisSplit) -> None:
+    uniq = np.unique(split.train_codes)
+    cost = iris_train.covering_cost(iris_data.code_bits(uniq), split.train_codes)
+    assert cost == pytest.approx(0.0)
+
+
+def test_covering_cost_one_pattern_two_wrong_bits_is_one_block() -> None:
+    # Halved Hamming distance: one wrong 3-bit block costs 2 bits, so a single pattern at
+    # Hamming distance 2 from a single code scores d_H/2 = 1.0.
+    code = int("100100100100", 2)
+    pattern = np.array([[0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]], dtype=np.uint8)  # d_H = 2
+    assert iris_train.covering_cost(pattern, np.array([code], dtype=np.int64)) == pytest.approx(1.0)
+
+
+def test_covering_floor_and_null_bracket_the_trained_situation(
+    split: iris_data.IrisSplit,
+) -> None:
+    uniq = np.unique(split.train_codes)
+    m = int(uniq.size)
+    assert iris_train.covering_floor(split.train_codes, m) == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="k > M"):
+        iris_train.covering_floor(split.train_codes, m + 1)
+    # n_draws ≥ 1000 (statistical-tests rule); random patterns must cover worse than the
+    # best k = 4 medoids and with non-zero spread.
+    floor = iris_train.covering_floor(split.train_codes, 4)
+    mean, std = iris_train.covering_null(split.train_codes, 4, n_draws=1000, seed=0)
+    assert mean > floor
+    assert std > 0.0
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_prototype_placement_on_random_params_is_finite_and_bounded(hidden: str) -> None:
+    split = iris_data.load_split(seed=0)
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    params = net.random_params(np.random.default_rng(0), scale=0.7)
+    score = iris_train.prototype_placement(net, params, split.train_codes, n_draws=1000, seed=0)
+    assert score.encoding == "inverse"
+    assert score.n_dead in range(5)
+    assert score.n_patterns == 4 - score.n_dead
+    for v in (score.R, score.R_null, score.R_null_std, score.R_floor, score.rho):
+        assert np.isfinite(v)
+    assert score.rho <= 1.0 + 1e-9
+    # without dropping, all four patterns are scored regardless of deadness
+    full = iris_train.prototype_placement(
+        net, params, split.train_codes, n_draws=200, seed=0, drop_dead=False
+    )
+    assert full.n_patterns == 4
+    assert full.n_dead == score.n_dead

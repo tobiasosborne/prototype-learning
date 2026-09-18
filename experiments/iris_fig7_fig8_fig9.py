@@ -154,7 +154,11 @@ def replot(out: Path) -> int:
     """Re-render the figures of a finished run from its saved ``losses.json`` and parameters."""
     meta = json.loads((out / "meta.json").read_text())
     cfg = iris_train.IrisConfig(**meta["config"])
-    split = iris_data.load_split(seed=meta["seed"], train_size=float(meta["split"]["train_size"]))
+    # runs predating the ambiguous flag have no policy recorded; the default was merge
+    ambiguous = meta.get("split", {}).get("ambiguous", "merge")
+    split = iris_data.load_split(
+        seed=meta["seed"], train_size=float(meta["split"]["train_size"]), ambiguous=ambiguous
+    )
     figure7(json.loads((out / "losses.json").read_text()), out / "fig07-iris-loss.png")
     params = {k: np.load(out / f"params-{k}.npy") for k in KINDS}
     for kind in KINDS:
@@ -171,6 +175,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--iterations", type=int, default=iris_train.IrisConfig.iterations)
     ap.add_argument("--n-hidden", type=int, default=iris_train.IrisConfig.n_hidden)
     ap.add_argument("--train-size", type=float, default=1.0 / 3.0)
+    ap.add_argument(
+        "--ambiguous",
+        choices=("merge", "drop"),
+        default="merge",
+        help="policy for codes carrying two class labels [Rosenhahn e-mail 2026-08-21]; "
+        '"drop" removes them entirely and suffixes the run directory with "-drop"',
+    )
     ap.add_argument("--init-scale", type=float, default=iris_train.IrisConfig.init_scale)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument(
@@ -185,10 +196,13 @@ def main(argv: list[str] | None = None) -> int:
         return replot(args.replot)
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    out = args.out or Path("experiments/runs/iris") / stamp
+    name = stamp + ("-drop" if args.ambiguous == "drop" else "")
+    out = args.out or Path("experiments/runs/iris") / name
     out.mkdir(parents=True, exist_ok=True)
 
-    split = iris_data.load_split(seed=args.seed, train_size=args.train_size)
+    split = iris_data.load_split(
+        seed=args.seed, train_size=args.train_size, ambiguous=args.ambiguous
+    )
     cfg = iris_train.IrisConfig(
         iterations=args.iterations, n_hidden=args.n_hidden, init_scale=args.init_scale
     )
@@ -225,6 +239,22 @@ def main(argv: list[str] | None = None) -> int:
         out / "fig07-iris-loss.png",
     )
     figure9(cfg, split, results, args.seed, out / "fig09-iris-tsne.png")
+
+    # pi-04: the quantitative placement metric replaces the Fig 9 t-SNE as evidence
+    # ([session-4 analysis]); both encodings per kind, scored on the training codes.
+    placement: dict[str, dict[str, float | int | str]] = {}
+    for kind in KINDS:
+        net = iris_train.network(cfg, kind)
+        for enc in ("inverse", "direct"):
+            score = iris_train.prototype_placement(
+                net, results[kind].params, split.train_codes, encoding=enc
+            )
+            placement[f"{kind}-{enc}"] = asdict(score)
+            print(
+                f"placement {kind:9s} {enc:7s} R={score.R:.3f} null={score.R_null:.3f} "
+                f"floor={score.R_floor:.3f} rho={score.rho:+.3f} dead={score.n_dead}"
+            )
+    (out / "results.json").write_text(json.dumps({"placement": placement}, indent=2))
 
     (out / "losses.json").write_text(
         json.dumps(

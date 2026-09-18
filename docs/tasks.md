@@ -29,7 +29,12 @@ scripts in `experiments/README.md`).
   `k = 3` fitted on the training rows, 12-bit one-hot-per-feature code (bit `3f + c`, MSB =
   "feature 0, cluster 0"), duplicate codes merged with the mean label `[ASSUMPTION]`,
   `encoding_accuracy_ceiling` (best any function of the code can do: 97/99/99 % on our splits).
-  The split itself is an assumption — Fig 8's bin counts do not fix it.
+  The split itself is an assumption — Fig 8's bin counts do not fix it.  Ambiguous codes
+  (one 12-bit pattern carrying two class labels) follow `[Rosenhahn e-mail 2026-08-21]` ("I
+  removed binary patterns which were assigned to two classes"): `load_split(...,
+  ambiguous="drop")` removes every such code from both splits, while the default "merge"
+  averages the labels and keeps all existing numbers unchanged; the experiment script exposes
+  this as `--ambiguous {merge,drop}` (a "drop" run directory gets the suffix `-drop`).
 * `model.py`: `dataset_superposition` loads the uniform superposition over the *distinct* codes
   as `Circuit.initial_state` (exact state prep; equivalent to Möttönen/QRAM noiselessly); target
   `p(x) ∝ (label+1)²` — Fig 8's bar heights confirm the square; `fast_joint` post-selects
@@ -37,7 +42,19 @@ scripts in `experiments/README.md`).
   label-free scale fit; `accuracy` per sample.
 * `train.py`: `IrisConfig` (4 hidden `[SNN Table I]` → 17 qubits; init ±0.7 rad to match
   Fig 7's starting KL), `run_fig7` trains classic and prototype nets of equal parameter count,
-  `tsne_embedding` for Fig 9.
+  `tsne_embedding` for Fig 9.  Because a t-SNE plot is not evidence (`[session-4 analysis]`,
+  cf. the co-author's request for "another metric"), `train.prototype_placement` reduces Fig 9's
+  claim to numbers: the hidden layer is decoded to one-hot patterns and scored by the covering
+  cost `R` — the mean halved Hamming distance (one wrong block = 2 bits) from each distinct
+  training code to its nearest pattern — relative to `covering_null` (random `k`-subsets of the
+  81 valid patterns) and `covering_floor` (the best `k`-subset of the codes themselves), giving
+  `rho = (R_null − R)/(R_null − R_floor)` with 1 = "as good as the best `k` medoids" and
+  0 = "no better than random patterns".  It is computed for prototype and classic in both
+  encodings ("inverse" = the Fig 9 cos²/sin² map, "direct" = the complementary sin²/cos²) on
+  the training codes and written to `results.json["placement"]`; dead neurons (negligible
+  output coupling) are excluded from the pattern set.  Fig 9's claim counts as reproduced only
+  if, over ≥ 20 (seed, split) pairs, median rho_prototype ≥ 0.5 with a bootstrap CI excluding
+  0 and rho_prototype > rho_classic (paired one-sided Wilcoxon, p < 0.01).
 * Results: accuracy 95/91/98 % (three seeds); Fig 7 contrast reproduced (classic test KL rises,
   prototype monotone); **Fig 9 not reproduced** (prototype weights do not visibly span the data
   in TSNE). Script: `iris_fig7_fig8_fig9.py` (two 17-q statevector processes, `OMP_NUM_THREADS=1`).
@@ -77,7 +94,11 @@ The paper names no recording, sampling rate or noise level.
   off Fig 13's raster: 1800 samples, range 0.117–0.903, beats at t ≈ 370 and 1269, σ ≈ 0.03–0.04)
   and `load_physionet` (MIT-BIH record 100 via `wfdb`, cached in `data/raw/mitdb/`); `add_noise`
   (additive Gaussian, `DEFAULT_SIGMA`); `windows`/`supervised_windows` (5 noisy samples
-  `s(t−2..t+2)` → clean `s(t)`); `contiguous_split` with a guard band.
+  `s(t−2..t+2)` → clean `s(t)`); `contiguous_split` with a guard band. `load_mailed` reads the
+  co-author's *original* recording (`data/raw/ecg-rosenhahn/*.mat`, `[Rosenhahn e-mail
+  2026-08-21]`, `[ASSUMPTION]` that this is the Fig-13 signal — its 1800-sample range matches),
+  which arrives pre-noised so `add_noise` is not applied and σ is measured (≈ 0.035),
+  `mailed_provenance` pins the files by SHA256 for `meta.json`.
 * `model.py`: `encode` = one `RX(θ_i)` per input with the same `θ = 2·asin(√s)` map;
   `predict` — `ŝ(t) = P(out=1)`, nothing rescaled (Fig 12 wires the output straight to the
   trace); `psnr`/`ssim` implement Eq 6–8 literally, with `ssim_windowed` as the scikit-image
