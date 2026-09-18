@@ -1,46 +1,43 @@
 # HANDOFF
 
-Session 4 (2026-09-18) paused mid-flight on the laptop checkout. Read `STATE.md`, then
-`notes/inbox-2026-09-18.md` (the co-author's requests and the Overleaf findings), then the
-session-4 worklog entry. Deliverable now: the co-author's asks for the paper, in this order.
+End of session 4 (2026-09-18, laptop). Read `STATE.md`, then `notes/inbox-2026-09-18.md`
+(what the co-author asked for and what his Overleaf draft contains), then the session-4 worklog
+entry. Deliverables now: `reports/tex/overleaf/` (drop-in for the co-author's Overleaf),
+`notes/reply-to-bodo-draft.md` (e-mail; fill [SLOTS]), `reports/tex/main.pdf` (30 pp).
 
-## First 15 minutes of the next session
-`git status -s` shows uncommitted edits from three pi runs (briefs `notes/briefs/pi-01..03`).
-For each: read the diff against its brief, run `uv run pytest tests/test_ecg.py` /
-`tests/test_iris.py` / `tests/test_train.py tests/test_bitcount.py`, then
-`sh scripts/check-all.sh`; commit per brief, or `git checkout --` the files and rerun the brief
-(`docs/pi.md`). One known environmental failure: the hardware-plan state-prep test reads a run
-dir that lives only on the workstation — skip it here, do not "fix" the number.
+## Open at close
+* Codex review 004 (`experiments/runs/codex/004-events.jsonl`, brief
+  `notes/briefs/codex-04-session4-review.md`): if `reviews/004-inbox.md` does not exist, extract
+  the last `agent_message` from the JSONL, file it, fix or decline each finding there.
+* Authorship: settled — acknowledgement only (Tobias, 2026-09-18). Do not reopen.
+* GitHub visibility for the `\repourl` link: not checked (`gh repo view --json visibility`).
 
-## Work queue, in order
-1. **Real ECG Table I** (`pi-01`, minimum ask): once merged,
-   `uv run python experiments/ecg_table1.py --source mailed --n-samples 1800 --processes 10`
-   and again with `--n-samples 0` (full 7700). Report both rows against Table I
-   (32.9/40.00/40.04). Input PSNR of the mailed data is ≈27.5 dB; do not retune `DEFAULT_SIGMA`.
-2. **Iterative baseline** (`pi-03`): E0 re-score the old runs with the per-basis monitor;
-   E1 `--iterative-batch 32 --iterative-iterations 20` (6 seeds, ~10 min); E2 single-coordinate
-   `--iterative-iterations 100000 --iterative-monitor perbasis` (4 seeds, ~45 min on 10 cores).
-   Then rewrite `reports/tex/sections/04-reproduction.tex` "iterative baseline" paragraph and the
-   scoreboard rows in `reports/tex/overleaf/`.
-3. **Iris drop policy** (`pi-02`): `experiments/iris_fig7_fig8_fig9.py --ambiguous drop`, all
-   three splits; compare accuracy/ceilings to the merge policy.
-4. **Fig 9 metric**: implement the normalised 4-medoid covering cost ρ (design in the session-4
-   Opus analysis, quoted in the worklog Gotchas is only the physics; the metric spec is in the
-   agent report — re-derive: decode each hidden neuron to a 12-bit code by per-feature argmax of
-   cos²(φ/2), R(B) = mean over distinct training codes of min_j d_H/2, null = random 4-subsets of
-   the 81 patterns, floor = best 4-subset of the codes, ρ = (R_null−R)/(R_null−R*)). pi brief.
-5. **Codex adversarial review** (gpt-5.6-sol, xhigh) of `reports/tex/overleaf/` + items 1–3,
-   filed as `reviews/004-inbox.md`. Then copy the figures from `figures-needed.txt` and hand
-   the folder to the co-author.
-6. **Reply to the co-author**: figure questions (10 right, 11, 12, 14 right, 16, 17/18), shots
-   (report + SPRT, no further optimisation), costs (simulators only, nothing paid), the
-   iteration-unit finding, and the two decisions only Tobias can take (authorship line; making
-   the GitHub repo public for the `\repourl` link).
-7. Shot-noise programme items 4–6 (session-3 queue) stay below all of the above.
-8. Racetrack / Adam / multi-layer packages: do not port; offer a review.
+## Work queue, in order (workstation unless marked)
+1. **ECG full trace**: `experiments/ecg_table1.py --source mailed --n-samples 0` (7700 samples;
+   ≈4× the 103-min laptop run → ≈30 min on 48 procs). Add as a row to `tab:ecg-mailed`.
+2. **Iris ≥20-seed sweep, both policies**: `experiments/iris_fig7_fig8_fig9.py --seed S
+   --ambiguous {merge,drop}` for S in 0..19 (≈10 min each on the workstation, 2 procs; run
+   10 at a time). Then the Fig 9 verdict per the criterion in `iris_train.firing_placement`
+   (both z-scores positive for the prototype and above the classic; paired Wilcoxon) and per
+   `prototype_placement` (median ρ ≥ 0.5). Write the result into 04-reproduction (Fig 9
+   paragraph), the scoreboard rows, and the overleaf files. One seed says: prototype
+   selectivity z +21 vs classic +0.2; coverage z +0.65 vs +3.0; ρ +0.03/+0.29 vs −0.17.
+3. **Fig 6 left panel**: regenerate `fig_bitcount_convergence` on the workstation where
+   `RUNS["bitcount"]` (6 seeds) exists; then restore "six seeds" in the caption
+   (`04-reproduction.tex` l.84 and l.88 note).
+4. **E1 control properly**: full-batch (32 inputs) sample-wise training with ordinary sweeps
+   (SUPERPOSITION_CONFIG-like, probes on) — needs a `--iterative-config` switch in
+   `bitcount_figs.py`; the Opus pilot reached per-input KL 1e-3 in 12 sweeps. Optional.
+5. **Send to the co-author**: after 1–3, copy `figures-needed.txt` figures next to the overleaf
+   files, re-run `latexmk` on `standalone.tex`, hand over the folder + e-mail.
+6. Shot-noise programme items 4–6 (session-3 queue) stay below all of the above.
+7. Racetrack / Adam / multi-layer packages from the co-author: do not port; offer a review.
 
-## Rules that bit us
-* Laptop: no GPU, no orkan, 2 P-cores + 8 E-cores; budget runs at ≤ 5 core-equivalents and
-  never run three pi agents' test suites concurrently with a timed pytest.
-* pi in `-p` mode is silent until exit; two pi runs must have disjoint file lists.
-* Everything from the co-author's inbox is local-only (scratchpad / `data/raw`), not committed.
+## Rules that bit us this session
+* Laptop budget: one experiment at a time; `OMP_NUM_THREADS=1`; check `ps` for orphaned
+  pytest children before trusting any wall time. Three pi test suites + two experiments gave
+  load 43 on 12 threads.
+* Never `pkill -f '<pattern>'` with a pattern that is on the calling shell's own command line.
+* pi `-p` is silent until exit; a pi run with no `git status` change after 30 min is hung.
+* Write results before scoring; scoring code that raises must not be able to lose a run.
+* Grade a training scheme in the observable it optimises (superposition KL ≠ per-input KL).

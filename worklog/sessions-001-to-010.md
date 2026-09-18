@@ -1,48 +1,66 @@
-# Session 4 — 2026-09-18 — inbox triage (co-author mails, Overleaf snapshot, real ECG), paused mid-flight
+# Session 4 — 2026-09-18 — inbox round: co-author's asks, real ECG, iterative baseline recast, Iris policy + placement metric, Overleaf drop-in
 
 ## HANDOFF — state at session close
-Paused after ~1 h on the laptop checkout (12 cores, no GPU, no orkan). Read
-`notes/inbox-2026-09-18.md` first (what the co-author asked for), then `HANDOFF.md` (queue).
-Three pi coding runs were still editing the working tree when the session paused; their edits
-are UNCOMMITTED and UNVERIFIED (see Verification). Next session: diff them against the briefs
-`notes/briefs/pi-01..03`, run the gates, commit or discard per file.
+Laptop checkout (12 threads, no GPU, no orkan). The co-author's minimum asks are done and
+written up: ECG on his original recording, the iterative baseline in its own observable, his
+Iris "drop" policy, a quantitative replacement for the Fig 9 t-SNE, and a compiling Overleaf
+drop-in with the reproducibility subsection and appendix. Codex review 004 in progress at
+close (see `reviews/004-inbox.md` if present). Queue: `HANDOFF.md`.
 
 ## What was done
-- Triage: mbox (4 mails 2026-08-21…09-07), Overleaf snapshot, racetrack package, ECG .mat files
-  summarised by three Sonnet subagents; digest in `notes/inbox-2026-09-18.md`. The .mat files
-  are staged at `data/raw/ecg-rosenhahn/` (gitignored; SHA256 in the digest).
-- `reports/tex/overleaf/` (Opus): drop-in main-text subsection + restructured appendix +
-  preamble snippet + README for the co-author; compiles standalone (revtex4-2, 15 pp, 0 errors).
-  Scoreboard rows for iterative/Iris/ECG still carry the session-3 numbers.
-- Opus analysis of the Fig 6 iterative baseline (in this entry's Gotchas): the stall at KL≈0.15
-  is an observable mismatch, not a failure of the scheme. Brief `pi-03` implements the fix.
-- `docs/pi.md` (pi conventions), `docs/codex.md` home-path fix, Codex CLI reinstalled (0.155.0).
-- Briefs `notes/briefs/pi-01-ecg-mailed.md`, `pi-02-iris-drop-ambiguous.md`,
-  `pi-03-iterative-baseline.md` launched (deepseek-flash, glm-5.3-flash, deepseek-flash).
+- Inbox triage (3 Sonnet summarisers) → `notes/inbox-2026-09-18.md`; .mat files staged under
+  `data/raw/ecg-rosenhahn/` (SHA256 in `tasks/ecg/data.py`).
+- pi-01 (deepseek-flash): `--source mailed` ECG loader, sigma measured, provenance in meta.json.
+  pi-02 (glm-5.3-flash): Iris `ambiguous="drop"` (`[Rosenhahn e-mail 2026-08-21]`).
+  pi-03 (deepseek-flash): `KWSAConfig.n_coords/probe_candidates`, `activation_distribution`,
+  `perbasis_kl_loss`, `ITERATIVE_CONFIG`, `train_iterative(monitor=, batch=, monitor_every=)`.
+  pi-04 (glm-5.3-flash): covering-cost placement metric, `--ambiguous` flag.
+  pi-05 (deepseek-flash) hung for 85 min without output → killed; figure written by hand.
+- Opus: (a) iterative-baseline diagnosis (observable mismatch + probe acceptance + per-example
+  schedule; measured per-eval costs); (b) Overleaf drop-in `reports/tex/overleaf/`; (c) report
+  text passes (iterative, ECG, compute provenance); (d) firing-based Iris placement score with
+  an exact per-input-qubit Kraus factorisation (13 ms vs 2.5 s per parameter vector), relative
+  dead-neuron tolerance, crash-proof scoring and `--rescore`; (e) reply draft
+  `notes/reply-to-bodo-draft.md` (all numbers filled, [SLOTS] left).
+- Runs (all laptop): `bitcount/20260918T111515Z` (E2: 4 seeds × 1e5 single-coordinate steps,
+  83 min), `ecg/20260918T132924` (mailed, 1800 samples, 103 min), `iris/20260918T085641Z-drop`
+  (seed 0; crashed in scoring after training, rescored from params), `bitcount/…-fullbatch`
+  (E1 with the single-coordinate config: inconclusive, KL 0.06→0.04 in 720 steps; not reported).
+- Report: 04 iterative paragraphs rewritten, `tab:ecg-mailed`, compute-discipline paragraph now
+  names both machines, B-provenance lists the .mat digests, scoreboard rows updated, Fig 6
+  right panel regenerated (`RUNS["bitcount_iterative"]`). Overleaf files mirror all of it.
+- Fixes en route: `bitcount_figs.py` x-axis (index × monitor_every), Iris scoring order
+  (results before scoring), two hardware-plan tests skip without the workstation run dirs,
+  `docs/codex.md` home path, Codex CLI reinstalled, `docs/pi.md` written.
 
 ## Verification
-- `uv run pytest -m "not slow" -x` at session start: 1 failure, environmental —
-  `tests/test_hardware_plan_script.py::test_stateprep_dense_count_is_shende_bullock_markov`
-  reads `experiments/runs/iris/20260820T144849Z/meta.json`, absent in this checkout.
-- With the pi edits in the tree: `ruff check` and `mypy src` green; `pytest tests/test_ecg.py
-  tests/test_iris.py` was killed by a 300 s timeout while three pi agents ran their own tests.
-  NOT verified. `scripts/check-all.sh` not run at close.
-- Committed here: only files written/read by the main session (notes, docs, briefs,
-  reports/tex/overleaf, reports/README.md). The pi edits to `src/ptqnn/tasks/{ecg,iris}`,
-  `src/ptqnn/train/kwsa.py`, `src/ptqnn/tasks/bitcount.py`, `experiments/*`, `tests/*`,
-  `docs/tasks.md`, `data/README.md` are left uncommitted.
+- `sh scripts/check-all.sh`: ruff/format/mypy clean; pytest 457 passed, 15 skipped, 6 deselected
+  (before the skip marker: 2 failed, both reading `experiments/runs/iris/20260820T*` which exist
+  only on the workstation).
+- `reports/tex/main.tex` → 30 pp, 0 errors, 0 undefined refs; `overleaf/standalone.tex` → 16 pp,
+  0 errors (one pre-existing overfull hbox in the fidelity display).
+- Every number in the report was re-derived by the writing agent from the run files and
+  spot-checked here (E2 crossings 12k/23k/73k; ECG 33.97/36.33/38.02, 36.80/37.48/36.86).
+- NOT verified: Codex review 004 (running at close); the ≥20-seed Iris sweep (one seed only).
 
 ## Gotchas for future agents
-- The prototype block RX(φ)·CRX·RX(−φ) does NOT restore the input register (the un-compute
-  acts on the control the CRX entangled), so P(inputs=x, out=1) ≠ 2⁻ⁿ·P(out=1|x). The
-  superposition KL (Eq 4) and the per-input activation KL are different observables; a network
-  fitted to one is ~0.03–0.09 off in the other. `train_iterative` was graded with the wrong one.
-- `kwsa.minimise` accepts the ±c probes as candidates; fine for the batch objective, a greedy
-  random walk on a one-example objective. `probe_candidates=False` (pi-03) is the fix.
-- Per-iteration cost of the old `train_iterative` is 613 ms (109 evals); "1000× more
-  iterations" as written would be 34 h/seed. With one coordinate per iteration it is 16.7 ms.
-- pi (`-p` mode) prints nothing until it exits; check `git status -s` for progress instead.
-- `backends/batched.py` is a pessimisation at 11 qubits / batch ≤ 32 (per-gate copies).
+- The prototype block RX(φ)·CRX·RX(−φ) does NOT restore the input register, so the Eq. 4
+  superposition KL and the per-input activation KL are different observables (0.03–0.4 apart on
+  the same network). Grade a scheme in the observable it optimises.
+- `kwsa.minimise` accepts the ±c probes as candidates by default: fine for batch objectives, a
+  random walk on a one-example objective (`probe_candidates=False`).
+- Old `train_iterative` cost 613 ms/iteration (109 evals); with `n_coords=1` 16.7 ms.
+  `meta.json["final_kl"]["iterative"]` is the MINIMUM of the history, not the last value.
+- Iris output couplings are small (amplitude-encoded target ∝ (label+1)²): any absolute
+  "dead neuron" threshold kills every neuron; use the relative one.
+- Trained Iris prototypes are anti-patterns (angles ≈ ±π on 2–4 inputs, ≈0 elsewhere): one-hot
+  argmax decoding is ill-posed for them; the firing-based score is encoding-free.
+- Mailed ECG: noisy trace clipped to [0,1], noise std 0.035 (not our 0.02), input PSNR 27.0 dB.
+  `ecg_table1.py` stores `wall_seconds` negative (clock bug; per-cell seconds are right).
+- pi (`-p`) prints nothing until exit; `pkill -f '<pattern>'` from inside a tool shell whose own
+  command line contains the pattern kills that shell. Kill by PID from `pgrep -x pi`.
+- Orphaned pytest children of killed agents kept 6 cores busy for an hour: check `ps` before
+  reading a wall time as a per-evaluation cost.
 
 # (earlier: session 3)
 
