@@ -57,6 +57,17 @@ class KWSAConfig:
     jitter: float = 0.0
     seed: int = 0
     mode: Literal["coordinate", "full"] = "coordinate"
+    n_coords: int | None = None
+    """[session-4 analysis] (c): coordinate mode visits only the first ``n_coords`` of the random
+    permutation per iteration (``None`` = all, the legacy sweep).  For a sample-wise objective a
+    one-coordinate visit is the paper's elementary KW step; the full sweep made the Fig-6 red
+    baseline ~36× more expensive than necessary."""
+    probe_candidates: bool = True
+    """[session-4 analysis] (b): with ``False`` the ``±c`` probes feed the slope estimate only and
+    the sole candidate is the KW step ``x + a_n ĝ``.  On a one-example objective the greedy
+    ``best-of-three`` rule of the default walks the parameter vector at random (KL history
+    0.155→0.271→0.093→…→0.344); restricting the candidates fixes the direction.  ``True`` is the
+    legacy rule."""
     restate_incumbent: bool = False
     """Re-evaluate the incumbent loss at the start of every iteration.  Needed when the objective
     is non-stationary (mini-batches, rotating episode seeds): a stale incumbent corrupts the
@@ -78,6 +89,10 @@ class KWSAResult:
     final_params: Params | None = None
     final_loss: float = float("nan")
     best_history: list[float] = field(default_factory=list)
+    extra_history: dict[str, list[float]] = field(default_factory=dict)
+    """Secondary monitored series, keyed by observable name (empty by default).  Used by the
+    bit-count iterative baseline to carry the monitor the caller did not select
+    (``[session-4 analysis]``)."""
 
 
 def accept(delta: float, temperature: float, k: float, rng: np.random.Generator) -> bool:
@@ -140,7 +155,10 @@ def minimise(
             if fx < best_f:
                 best_x, best_f = x.copy(), fx
         if cfg.mode == "coordinate":
-            for i in rng.permutation(x.size):
+            order = rng.permutation(x.size)
+            if cfg.n_coords is not None:
+                order = order[: cfg.n_coords]
+            for i in order:
                 e = np.zeros_like(x)
                 e[i] = c_n
                 with ctx():
@@ -149,7 +167,10 @@ def minimise(
                     step[i] = -a_n * (fp - fm) / (2 * c_n)
                     fs = f(x + step)
                 res.evaluations += 3
-                fc, cand = min((fp, x + e), (fm, x - e), (fs, x + step), key=lambda t: t[0])
+                if cfg.probe_candidates:
+                    fc, cand = min((fp, x + e), (fm, x - e), (fs, x + step), key=lambda t: t[0])
+                else:
+                    fc, cand = fs, x + step
                 if accept(fc - fx, temperature, cfg.k, rng):
                     x, fx = cand, fc
                     res.accepted += 1

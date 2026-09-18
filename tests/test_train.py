@@ -140,6 +140,64 @@ def test_kwsa_restate_incumbent_for_nonstationary_objective() -> None:
     assert res.final_params is not None
 
 
+def test_kwsa_probe_candidates_false_follows_kw_direction_exactly() -> None:
+    # Defect (b) [session-4 analysis]: the ±c probes must feed the derivative only; the accepted
+    # candidate is then exactly x0 − a_n ĝ.  With n_coords=1 only the visited coordinate moves,
+    # and on a quadratic its update equals −a·grad to 1e-9 (t0=0 → greedy acceptance).
+    target = np.array([0.3, -1.2, 2.0])
+
+    def f(x: np.ndarray) -> float:
+        return float(np.sum((x - target) ** 2))
+
+    a0, c0 = 0.1, 0.05
+    x0 = np.zeros(3)
+    cfg = kwsa.KWSAConfig(
+        iterations=1, a0=a0, c0=c0, t0=0.0, seed=7, n_coords=1, probe_candidates=False
+    )
+    res = kwsa.minimise(f, x0, cfg)
+    assert res.final_params is not None
+    delta = res.final_params - x0
+    moved = np.flatnonzero(np.abs(delta) > 1e-15)
+    assert moved.size == 1  # only the visited coordinate changes
+    grad = 2.0 * (x0 - target)
+    assert delta[int(moved[0])] == pytest.approx(-a0 * grad[int(moved[0])], abs=1e-9)
+
+
+def test_kwsa_n_coords_one_costs_three_evaluations_per_iteration() -> None:
+    target = np.array([0.3, -1.2, 2.0])
+
+    def f(x: np.ndarray) -> float:
+        return float(np.sum((x - target) ** 2))
+
+    iterations = 5
+    res = kwsa.minimise(
+        f,
+        np.zeros(3),
+        kwsa.KWSAConfig(iterations=iterations, a0=0.1, c0=0.05, seed=1, n_coords=1),
+    )
+    # 1 initial incumbent + 3 probes (two ±c slope probes, one KW candidate) per iteration.
+    assert res.evaluations == 1 + 3 * iterations
+
+
+def test_kwsa_defaults_match_explicit_legacy_fields() -> None:
+    # n_coords=None / probe_candidates=True must reproduce the pre-existing greedy sweep exactly
+    # (bit-for-bit on a fixed seed).
+    target = np.array([0.3, -1.2, 2.0])
+
+    def f(x: np.ndarray) -> float:
+        return float(np.sum((x - target) ** 2))
+
+    base = dict(iterations=6, a0=0.5, c0=0.1, seed=4)
+    default = kwsa.minimise(f, np.zeros(3), kwsa.KWSAConfig(**base))
+    explicit = kwsa.minimise(
+        f, np.zeros(3), kwsa.KWSAConfig(**base, n_coords=None, probe_candidates=True)
+    )
+    np.testing.assert_array_equal(default.params, explicit.params)
+    assert default.history == explicit.history
+    assert default.evaluations == explicit.evaluations
+    assert default.extra_history == {}
+
+
 def test_kwsa_map_fn_parallel_probes_equivalent() -> None:
     target = np.array([0.3, -1.2, 2.0])
 

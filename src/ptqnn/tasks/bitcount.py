@@ -12,7 +12,8 @@ figure, ±0.001).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -88,12 +89,86 @@ def sample_loss(
     return loss
 
 
+def _batch_loss(
+    net: Network,
+    samples: Sequence[int],
+    backend: Backend | None = None,
+    target_scale: float = 1.0,
+) -> Loss:
+    """Mean squared error of ``P(out=1 | x)`` over ``samples`` (one :func:`sample_loss` each)."""
+    fns = [sample_loss(net, int(x), backend, target_scale) for x in samples]
+    if len(fns) == 1:
+        return fns[0]
+
+    def loss(params: Real) -> float:
+        return float(np.mean([f(params) for f in fns]))
+
+    return loss
+
+
+def activation_distribution(net: Network, params: Real, backend: Backend | None = None) -> Real:
+    """``P(out=1 | x)`` over all ``2^n`` basis inputs, renormalised to sum one.
+
+    ``[session-4 analysis]`` (a): the prototype block ``RX(φ)·CRX·RX(−φ)`` does not restore the
+    input register — the un-compute acts on a control the CRX has already entangled — so this is
+    *not* ``2^-n · P(inputs = x, out = 1)``.  The sample-wise scheme is graded on this per-input
+    observable.  A dead network (every activation zero) has no distribution; return uniform.
+    """
+    be = backend or ref.StatevectorBackend()
+    act = np.array(
+        [
+            distribution.output_activation(net, params, basis_prep(net, x), be)
+            for x in range(2**net.n_inputs)
+        ],
+        dtype=np.float64,
+    )
+    z = act.sum()
+    if z <= 0:
+        return np.full(act.size, 1.0 / act.size, dtype=np.float64)
+    return act / z
+
+
+def perbasis_kl_loss(net: Network, backend: Backend | None = None) -> Loss:
+    """``D_KL(target ‖ model)`` on the per-input distribution, the sample-wise observable.
+
+    ``[session-4 analysis]`` (a): target ``(popcount(x)+1)/112`` and model
+    ``q(x) ∝ P(out=1 | x)`` over the ``2^n`` basis inputs (``activation_distribution``), not the
+    uniform-superposition distribution.  Same KL convention and eps handling as :func:`kl_loss`.
+    """
+    target = target_distribution(net.n_inputs)
+
+    def loss(params: Real) -> float:
+        return losses.kl_divergence(target, activation_distribution(net, params, backend))
+
+    return loss
+
+
 # [ASSUMPTION] KW–SA hyper-parameters for bit-count; the paper publishes none.  Chosen so that
 # the superposition run reaches KL < 1e-3 in O(10) iterations (Fig 6 shows ≈8).
 # Grid-searched over a0 ∈ {20,50,100}, c0 ∈ {0.2,0.5}, (t0,cooling) ∈ {(0,·),(0.02,0.7),(0.05,0.8)}
 # on 6 seeds: this setting had the lowest median KL after 12 sweeps (1.1e-3; worst seed 1.5e-2).
 SUPERPOSITION_CONFIG = kwsa.KWSAConfig(
     iterations=20, a0=20.0, alpha=0.3, c0=0.2, gamma=0.101, t0=0.02, cooling=0.7, seed=0
+)
+
+# [ASSUMPTION] KW–SA hyper-parameters for the Fig-6 red baseline; the paper publishes none.
+# Defects (b)/(c) of [session-4 analysis] drove this choice: the paper's "iteration" for the red
+# curve is most plausibly one elementary KW step on one coordinate of one example (the author
+# says to use "1000 times more iterations"), so n_coords=1 (not the legacy 36-coordinate sweep =
+# 109 evaluations) and probe_candidates=False (the ±c probes only estimate the slope; without
+# this the greedy best-of-three candidate rule is a random walk on a one-example objective).
+# Constant step sizes (alpha=gamma=0) because the objective changes every iteration, so the
+# superposition run's cooling schedule does not transfer; a0=2.0, c0=0.05 is a conservative
+# single-example step with no published schedule to match.
+ITERATIVE_CONFIG = kwsa.KWSAConfig(
+    iterations=1,
+    a0=2.0,
+    alpha=0.0,
+    c0=0.05,
+    gamma=0.0,
+    t0=0.0,
+    n_coords=1,
+    probe_candidates=False,
 )
 
 
@@ -119,33 +194,63 @@ def train_iterative(
     backend: Backend | None = None,
     config: kwsa.KWSAConfig | None = None,
     target_scale: float = 1.0,
+    monitor: Literal["perbasis", "superposition"] = "perbasis",
+    monitor_every: int = 1,
+    anneal_every: int | None = None,
+    batch: int | None = None,
 ) -> kwsa.KWSAResult:
-    """Sample-wise baseline (Fig 6, red): each iteration takes one KW–SA step on the squared
-    error of a single random input; the KL of the full distribution is recorded per iteration."""
+    """Sample-wise baseline (Fig 6, red): one elementary KW–SA step per iteration on the mean
+    squared error over ``batch`` random distinct basis inputs (``batch=None``: a single input,
+    ``batch=2**n_inputs``: the full basis set).
+
+    ``[session-4 analysis]`` (a): the run is graded on ``perbasis_kl_loss`` by default — the
+    per-input distribution ``q(x) ∝ P(out=1 | x)`` that this objective actually fits — not on the
+    uniform-superposition observable.  Both are recorded: the chosen monitor in ``history`` and
+    the other in ``extra_history``.  ``monitor_every`` thins the recording (history index ``i`` ↔
+    iteration ``i·monitor_every``) and the final iteration is always recorded, so the last index
+    can sit off the cadence.  (b)/(c): ``ITERATIVE_CONFIG`` restricts the update to one coordinate
+    and to the KW candidate; the schedule index advances once per full pass over the basis inputs
+    (``anneal_every``, default ``2**net.n_inputs``).
+    """
+    if monitor_every < 1:
+        raise ValueError("monitor_every must be >= 1")
     rng = np.random.default_rng(seed)
-    cfg = config or SUPERPOSITION_CONFIG
-    monitor = kl_loss(net, backend)
+    cfg = config or ITERATIVE_CONFIG
+    if anneal_every is None:
+        anneal_every = 2**net.n_inputs
+    monitors: dict[str, Loss] = {
+        "perbasis": perbasis_kl_loss(net, backend),
+        "superposition": kl_loss(net, backend),
+    }
+    extra_key = "superposition" if monitor == "perbasis" else "perbasis"
+    chosen, other = monitors[monitor], monitors[extra_key]
     x = net.random_params(rng)
-    history = [monitor(x)]
+    history = [chosen(x)]
+    extra_history: dict[str, list[float]] = {extra_key: [other(x)]}
     best_x, best_f, best_history = x.copy(), history[0], [history[0]]
-    evaluations = 1
+    evaluations = 0
     for n in range(iterations):
-        sample = int(rng.integers(2**net.n_inputs))
+        if batch is None:
+            samples = [int(rng.integers(2**net.n_inputs))]
+        else:
+            k = min(batch, 2**net.n_inputs)
+            samples = [int(s) for s in rng.choice(2**net.n_inputs, size=k, replace=False)]
+        objective = _batch_loss(net, samples, backend, target_scale)
         step_cfg = kwsa.KWSAConfig(
             **{**cfg.__dict__, "iterations": 1, "seed": int(rng.integers(2**31))}
         )
-        # one KW sweep on this sample at schedule position n (a_n, c_n decay as in the
-        # superposition run); continue from the annealer's accepted state, not its best.
-        res = kwsa.minimise(
-            sample_loss(net, sample, backend, target_scale), x, step_cfg, start_iteration=n
-        )
+        # one KW sweep at schedule position n // anneal_every (a_n, c_n decay as configured);
+        # continue from the annealer's accepted state, not its best.
+        res = kwsa.minimise(objective, x, step_cfg, start_iteration=n // anneal_every)
         x = res.final_params if res.final_params is not None else res.params
         evaluations += res.evaluations
-        kl = monitor(x)
-        history.append(kl)
-        if kl < best_f:
-            best_x, best_f = x.copy(), kl
-        best_history.append(best_f)
+        if (n + 1) % monitor_every == 0 or n == iterations - 1:
+            kl = chosen(x)
+            history.append(kl)
+            extra_history[extra_key].append(other(x))
+            if kl < best_f:
+                best_x, best_f = x.copy(), kl
+            best_history.append(best_f)
     return kwsa.KWSAResult(
         params=best_x,
         loss=best_f,
@@ -154,4 +259,5 @@ def train_iterative(
         final_params=x,
         final_loss=history[-1],
         best_history=best_history,
+        extra_history=extra_history,
     )

@@ -35,7 +35,7 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import matplotlib
 
@@ -51,6 +51,8 @@ from ptqnn.train import distribution
 
 N_BITS = 5
 N_HIDDEN = 5  # [PTQNN Fig 5]: 5 hidden prototype neurons, 11 qubits total.
+
+IterativeMonitor = Literal["perbasis", "superposition"]
 
 # --- Fig 3 -------------------------------------------------------------------------------------
 
@@ -114,15 +116,22 @@ def plot_fig3(qs0: np.ndarray, qs1: np.ndarray, grid: np.ndarray, out_path: Path
 # --- Fig 5 / Fig 6 -------------------------------------------------------------------------------
 
 
-def _train_seed(args: tuple[int, int, int]) -> dict[str, Any]:
+def _train_seed(args: tuple[int, int, int, IterativeMonitor, int, int]) -> dict[str, Any]:
     """Worker: superposition + iterative training for one seed. Runs in its own process."""
-    seed, iterations, iterative_iterations = args
+    seed, iterations, iterative_iterations, monitor, batch, monitor_every = args
     net = bitcount.network(N_BITS, N_HIDDEN)
 
     t0 = time.perf_counter()
     res_s = bitcount.train_superposition(net, seed=seed, iterations=iterations)
     t1 = time.perf_counter()
-    res_i = bitcount.train_iterative(net, seed=seed, iterations=iterative_iterations)
+    res_i = bitcount.train_iterative(
+        net,
+        seed=seed,
+        iterations=iterative_iterations,
+        monitor=monitor,
+        batch=batch or None,
+        monitor_every=monitor_every,
+    )
     t2 = time.perf_counter()
 
     return {
@@ -132,8 +141,14 @@ def _train_seed(args: tuple[int, int, int]) -> dict[str, Any]:
         "superposition_params": res_s.params.tolist(),
         "superposition_evaluations": res_s.evaluations,
         "superposition_wall_s": t1 - t0,
+        "iterative_monitor": monitor,
+        "iterative_batch": batch,
+        "iterative_monitor_every": monitor_every,
         "iterative_loss": float(res_i.loss),
         "iterative_history": [float(v) for v in res_i.history],
+        "iterative_extra_history": {
+            key: [float(v) for v in vals] for key, vals in res_i.extra_history.items()
+        },
         "iterative_evaluations": res_i.evaluations,
         "iterative_wall_s": t2 - t1,
     }
@@ -177,7 +192,19 @@ def plot_fig6(results: list[dict[str, Any]], out_path: Path) -> tuple[np.ndarray
     x_itr = np.arange(itr.shape[1])
     x_sup = np.arange(sup.shape[1])
     ax.fill_between(x_itr, itr_lo, itr_hi, color="red", alpha=0.2, linewidth=0)
-    ax.plot(x_itr, itr_med, color="red", linewidth=2, label="Iterative Optimization")
+    mon = results[0]["iterative_monitor"]
+    ax.plot(x_itr, itr_med, color="red", linewidth=2, label=f"Iterative Optimization ({mon})")
+    extra_key = next(iter(results[0]["iterative_extra_history"]), None)
+    if extra_key is not None:
+        extra = np.array([r["iterative_extra_history"][extra_key] for r in results])
+        ax.plot(
+            np.arange(extra.shape[1]),
+            np.median(extra, axis=0),
+            color="red",
+            linewidth=1,
+            linestyle="--",
+            label=f"Iterative ({extra_key}, secondary)",
+        )
     ax.fill_between(x_sup, sup_lo, sup_hi, color="blue", alpha=0.2, linewidth=0)
     ax.plot(x_sup, sup_med, color="blue", linewidth=2, label="Optimization using superposition")
     ax.set_xlabel("# Iterations")
@@ -199,6 +226,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--seeds", type=int, nargs="+", default=list(range(6)))
     p.add_argument("--iterations", type=int, default=20)
     p.add_argument("--iterative-iterations", type=int, default=200)
+    p.add_argument(
+        "--iterative-monitor",
+        choices=["perbasis", "superposition"],
+        default="perbasis",
+        help="KL series for the iterative (red) curve; the other is plotted dashed.",
+    )
+    p.add_argument(
+        "--iterative-batch",
+        type=int,
+        default=0,
+        help="distinct basis inputs per iterative step; 0 = single example, 32 = full batch.",
+    )
+    p.add_argument("--iterative-monitor-every", type=int, default=1)
     p.add_argument("--out", type=str, default=default_out)
     return p.parse_args(argv)
 
@@ -244,7 +284,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     t0 = time.perf_counter()
     ctx = mp.get_context("fork")
-    jobs = [(seed, args.iterations, args.iterative_iterations) for seed in args.seeds]
+    monitor = cast(IterativeMonitor, args.iterative_monitor)
+    jobs = [
+        (
+            seed,
+            args.iterations,
+            args.iterative_iterations,
+            monitor,
+            args.iterative_batch,
+            args.iterative_monitor_every,
+        )
+        for seed in args.seeds
+    ]
     with ctx.Pool(processes=max(1, min(len(args.seeds), os.cpu_count() or 1))) as pool:
         results = pool.map(_train_seed, jobs)
     train_wall = time.perf_counter() - t0
@@ -268,14 +319,17 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     with (out_dir / "histories.json").open("w") as f:
-        json.dump(
-            {
-                "superposition": {str(r["seed"]): r["superposition_history"] for r in results},
-                "iterative": {str(r["seed"]): r["iterative_history"] for r in results},
-            },
-            f,
-            indent=2,
-        )
+        histories: dict[str, Any] = {
+            "superposition": {str(r["seed"]): r["superposition_history"] for r in results},
+            "iterative": {str(r["seed"]): r["iterative_history"] for r in results},
+            "iterative_monitor": results[0]["iterative_monitor"],
+        }
+        secondary = next(iter(results[0]["iterative_extra_history"]), None)
+        if secondary is not None:
+            histories[f"iterative_{secondary}"] = {
+                str(r["seed"]): r["iterative_extra_history"][secondary] for r in results
+            }
+        json.dump(histories, f, indent=2)
 
     total_wall = time.perf_counter() - wall_t0
 
@@ -284,6 +338,9 @@ def main(argv: list[str] | None = None) -> None:
         "seeds": args.seeds,
         "iterations": args.iterations,
         "iterative_iterations": args.iterative_iterations,
+        "iterative_monitor": args.iterative_monitor,
+        "iterative_batch": args.iterative_batch,
+        "iterative_monitor_every": args.iterative_monitor_every,
         "n_bits": N_BITS,
         "n_hidden": N_HIDDEN,
         "fig3_grid_n": FIG3_GRID_N,
@@ -367,8 +424,9 @@ def main(argv: list[str] | None = None) -> None:
             f"iterative baseline (`bitcount.train_iterative`) only reaches median KL "
             f"{itr_med[-1]:.4f} after {args.iterative_iterations} iterations — it is qualitatively "
             "slower than superposition training (matching the paper) but does not converge to "
-            "near-zero on this budget. The scheme's design — one KW-SA coordinate sweep per "
-            "randomly sampled input, sharing the superposition run's `a_n`/`c_n` schedule — is "
+            "near-zero on this budget. The scheme's design — one elementary KW step on one "
+            "coordinate, graded on the per-input activation distribution and annealed once per "
+            "full pass over the basis inputs (`[session-4 analysis]` (a)–(c)) — is "
             "itself `[ASSUMPTION]` (`ptqnn/tasks/bitcount.py` docstring, `PLAN.md §0` "
             "'Iterative baseline of Fig 6'); the paper gives no hyperparameters for it.",
             "",

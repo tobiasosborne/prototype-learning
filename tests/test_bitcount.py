@@ -76,6 +76,108 @@ def test_kl_loss_uses_target_first() -> None:
     assert isinstance(kwsa.KWSAConfig(), kwsa.KWSAConfig)
 
 
+def test_activation_distribution_sums_to_one_and_matches_backend() -> None:
+    net = bitcount.network(n_bits=3, n_hidden=2)
+    params = net.random_params(np.random.default_rng(0))
+    d = bitcount.activation_distribution(net, params)
+    assert d.shape == (8,)
+    assert d.sum() == pytest.approx(1.0, abs=1e-12)
+    be = ref.StatevectorBackend()
+    raw = np.array(
+        [
+            distribution.output_activation(net, params, bitcount.basis_prep(net, x), be)
+            for x in range(8)
+        ]
+    )
+    np.testing.assert_allclose(d, raw / raw.sum(), atol=1e-12)
+
+
+def test_superposition_and_perbasis_distributions_differ() -> None:
+    # Claim (a) [session-4 analysis]: the prototype block RX(φ)·CRX·RX(−φ) does not restore the
+    # input register, so P(inputs=x, out=1) ≠ 2^-n · P(out=1 | x); the two renormalised
+    # distributions differ visibly for random prototype params.
+    net = bitcount.network(n_bits=5, n_hidden=5)
+    params = net.random_params(np.random.default_rng(0))
+    be = ref.StatevectorBackend()
+    superposition = distribution.conditioned_input_distribution(
+        net, params, bitcount.superposition_prep(net), be
+    )
+    per_basis = bitcount.activation_distribution(net, params, be)
+    assert float(np.max(np.abs(superposition - per_basis))) > 0.01
+
+
+def test_perbasis_kl_loss_zero_when_model_equals_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    net = bitcount.network(n_bits=3, n_hidden=1)
+    target = bitcount.target_distribution(3)
+    monkeypatch.setattr(
+        bitcount, "activation_distribution", lambda net, params, backend=None: target
+    )
+    assert bitcount.perbasis_kl_loss(net)(np.zeros(net.n_params)) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_train_iterative_records_both_monitors_on_cadence() -> None:
+    # history index i ↔ iteration i·monitor_every; index 0 is the initial point and the final
+    # record is always taken, so 64 iterations / 16 → 5 entries in each series.
+    net = bitcount.network(n_bits=3, n_hidden=1)
+    res = bitcount.train_iterative(net, seed=0, iterations=64, monitor_every=16)
+    assert len(res.history) == 5
+    assert "superposition" in res.extra_history
+    assert len(res.extra_history["superposition"]) == 5
+
+    flipped = bitcount.train_iterative(
+        net, seed=0, iterations=64, monitor="superposition", monitor_every=16
+    )
+    assert "perbasis" in flipped.extra_history
+    assert len(flipped.extra_history["perbasis"]) == 5
+
+
+def test_train_iterative_full_batch_runs_finite() -> None:
+    net = bitcount.network(n_bits=5, n_hidden=1)
+    res = bitcount.train_iterative(net, seed=0, iterations=4, batch=32)
+    assert len(res.history) == 5  # monitor_every defaults to 1
+    assert bool(np.all(np.isfinite(res.history)))
+
+
+def test_train_iterative_anneal_every_defaults_to_dataset_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    net = bitcount.network(n_bits=5, n_hidden=1)
+    seen: list[int] = []
+    real = kwsa.minimise
+
+    def spy(f, x0, cfg, *args, **kwargs):
+        seen.append(kwargs["start_iteration"])
+        return real(f, x0, cfg, *args, **kwargs)
+
+    monkeypatch.setattr(bitcount.kwsa, "minimise", spy)
+    bitcount.train_iterative(net, seed=0, iterations=33, monitor_every=100)
+    assert seen == [0] * 32 + [1]
+
+
+def test_train_iterative_uses_three_kw_probes_per_iteration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    net = bitcount.network(n_bits=3, n_hidden=1)
+    calls = {"n": 0}
+    real = bitcount.sample_loss
+
+    def counting(*args, **kwargs):
+        loss = real(*args, **kwargs)
+
+        def wrapped(params):
+            calls["n"] += 1
+            return loss(params)
+
+        return wrapped
+
+    monkeypatch.setattr(bitcount, "sample_loss", counting)
+    iterations = 4
+    bitcount.train_iterative(net, seed=0, iterations=iterations, monitor_every=1000)
+    # One elementary KW step per iteration (n_coords=1, probe_candidates=False): two ±c slope
+    # probes + one candidate, plus the fresh sample's incumbent evaluated once.
+    assert calls["n"] == 4 * iterations
+
+
 def test_seed_controls_the_whole_run() -> None:
     net = bitcount.network(n_bits=3, n_hidden=1)
     a = bitcount.train_superposition(net, seed=1, iterations=2)
