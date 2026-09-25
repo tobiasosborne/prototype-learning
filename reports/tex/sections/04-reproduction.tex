@@ -125,24 +125,36 @@ fixed the pass criterion before running the seeds.  The first reads what the hid
 \emph{do}: from the probability $P_j(c)$ that neuron $j$ fires on training code $c$ it forms the
 \emph{coverage} $\mathrm{mean}_c \max_j P_j(c)$ (every code has a neuron that fires on it) and
 the \emph{selectivity} $\mathrm{mean}_j\,[\max_c P_j(c) - \mathrm{mean}_c P_j(c)]$ (each neuron
-fires on some codes far more than on the rest), each expressed as a $z$-score against 1\,000
-untrained layers drawn from the initialisation.  The second reads the angles: it decodes each
+fires on some codes far more than on the rest), each also expressed as a $z$-score against
+1\,000 untrained layers of the same kind drawn from the initialisation, i.e.\ as what training
+changed.  The second reads the angles: it decodes each
 neuron's preferred 12-bit pattern and measures how well the patterns cover the training codes,
 as $\rho = 0$ for random patterns and $\rho = 1$ for the best possible choice.  Fig.~9 counts as
-reproduced if, over 20 seeds, the prototype layer is positive on both firing scores and beats
-the classic layer on both (paired one-sided Wilcoxon test, $p < 0.01$), and, for the angles, if
+reproduced if, over 20 seeds, the prototype layer's two $z$-scores are positive and beat
+the classic layer's (paired one-sided Wilcoxon test, $p < 0.01$), and, for the angles, if
 its median $\rho$ is at least $0.5$.
 
 Over 20 seeds and both treatments of ambiguous codes (below), i.e.\ 40 training runs
-summarised in \run{iris\_sweep/20260925T173530Z}, the prototype layer has the selectivity and
-not the coverage.  Its selectivity $z$ has median
-$+18.0$ against $+1.8$ for the classic layer ($p < 10^{-5}$ under both policies); its coverage $z$ has median $+0.6$
-against $+2.2$, i.e.\ the classic neurons fire on more of the data.  The angle score is zero
-within error for both networks (medians $-0.07$ to $+0.14$, the bootstrap interval of every prototype median containing
-$0$).  Trained prototype neurons are specialised detectors, but they do not tile the data better
-than classic neurons, and their angles do not read as data patterns under either angle-to-bit
-convention.  We record Fig.~9 as not reproduced.  The same sweep confirms the Fig.~7 contrast:
-the classic network's test loss rises after its minimum on 8 of 20 seeds, the prototype's on 2.
+summarised in \run{iris\_sweep/20260925T175903Z}, the criterion fails, and the raw values say
+why.  An untrained prototype layer already fires on almost every code (coverage $0.79$) and
+hardly discriminates between codes (selectivity $0.02$); an untrained classic layer is the
+opposite ($0.39$ and $0.33$).  Training moves each layer mainly along the axis on which it
+starts weak: the prototype layer's selectivity rises to $0.14$--$0.15$ ($z$ median $+17$ to
+$+18$ against its own untrained spread) while its coverage barely moves ($0.80$--$0.89$, $z$
+$+0.1$ to $+0.6$); the classic layer's coverage rises to $0.60$--$0.63$ ($z$ $+1.9$ to $+2.2$)
+and its selectivity to $0.42$--$0.46$.  Compared with each other after training, the prototype
+layer covers more of the data (on 19 and 16 of 20 seeds for the two treatments) and the classic
+layer is more selective (on all 40 runs).  The prototype layer therefore does span the data
+more widely, but an \emph{untrained} prototype layer already spans it more widely than a
+trained classic one: the effect belongs to the architecture, not to where training puts the
+weights, which is what Fig.~9 claims to show.  The angle score adds nothing: the prototype
+medians lie between $+0.04$ and $+0.08$ with every bootstrap interval containing $0$, and the
+classic medians between $-0.07$ and $+0.14$ (one interval, $0.07$ to $0.22$, excludes $0$).  We
+record Fig.~9 as not reproduced.  The same sweep supports the Fig.~7 contrast, less sharply than
+the curves of \cref{fig:iris-losses} suggest: counting a seed when its final test loss ends more
+than $5\,\%$ above its minimum, the classic network's does on 8 of 20 seeds when
+ambiguous codes are merged and on 7 when they are dropped, the prototype's on 2 and 0; the prototype curves are
+not strictly monotone (small rises on 9 of 20 seeds under either treatment).
 
 \paragraph{Ambiguous codes, and how labels are read out.}
 The first author told us that he removed the binary patterns assigned to two classes.  Under
@@ -152,7 +164,7 @@ set and on all 100 test flowers.  The sweep also exposed a fragility of the read
 ``each code's weight to the nearest label'' needs one overall scale, since the three class
 weights $1:4:9$ are known only up to a constant; fitted afresh on each evaluated set, it makes a
 flower's predicted label depend on which \emph{other} flowers are evaluated with it.  On one
-seed, removing three ambiguous test codes moved that scale by a whole class step and the
+seed, removing three ambiguous test codes (13 flowers) moved that scale by a whole class step and the
 prototype network's accuracy from $94\,\%$ (all 100 flowers) to $39\,\%$ (the 87 kept).  Reading
 each flower from its own basis state instead of from the superposition changes nothing (the two
 read-outs agree on every run of the sweep); fitting the scale once on the training set removes the
@@ -267,7 +279,7 @@ paper's $32.90$~dB for that cell does not show.  \emph{The top of the table does
 and three-neuron prototype cells fall $2.5$ and $3.2$~dB short of the paper, and at three neurons
 the ordering inverts (classic $38.02$~dB against prototype $36.86$~dB, where the paper has the
 prototype ahead).  The whole-signal SSIM of Eq.~(8) is $0.997$--$0.999$ in every cell and
-separates nothing; the 7-sample windowed SSIM, $0.84$--$0.93$, ranks the cells as the PSNR does.
+separates nothing; the 7-sample windowed SSIM, $0.84$--$0.94$, ranks the cells as the PSNR does.
 
 With the signal no longer a candidate, we record this as a discrepancy and do not tune it.  Three
 explanations remain, in the order we would test them: the noise level and the clipping of the
@@ -276,8 +288,8 @@ and its $\sigma = 0.035$ is not the $\approx 0.03$ the figure suggested); the re
 selection protocol, which the paper does not give and for which we take 8 restarts per cell with
 the best chosen by training MSE; and the train/test split, which the paper also does not give and
 for which we take the first half and the second.  The full $7\,700$-sample recording (input
-$27.5$~dB; run \run{ecg/20260925T165741Z-mailedfull}, 39 minutes on 24 workstation cores) rules
-out the window as a fourth: it gives the same shape --- prototype $37.75$, $37.82$ and $36.25$~dB,
+$27.5$~dB; run \run{ecg/20260925T165741Z-mailedfull}, 39 minutes on 24 workstation cores)
+shows that the shortfall is not peculiar to that window under this protocol: it gives the same shape --- prototype $37.75$, $37.82$ and $36.25$~dB,
 classic $34.90$, $37.72$ and $38.19$~dB, i.e.\ a $2.9$~dB prototype advantage at one neuron, a
 tie at two and the classic network ahead at three.
 
@@ -301,7 +313,7 @@ paper values (light) against ours (dark).  Run \run{ecg/20260820T162014}.}
 \centering\small
 \caption{Paper Table~I on the paper's own recording (first $1\,800$ samples, the Fig.~13 window,
 noisy input $27.0$~dB; and all $7\,700$ samples, input $27.5$~dB).  PSNR in dB on the test half, for one to three hidden neurons of each
-type.  Whole-signal SSIM is $0.997$--$0.999$ and windowed SSIM $0.84$--$0.93$ in every cell, so
+type.  Whole-signal SSIM is $0.997$--$0.999$ and windowed SSIM $0.84$--$0.94$ in every cell, so
 neither is tabulated.  The memo row is our synthetic-signal result of \cref{fig:ecg-table}, whose
 input is a cleaner $32.0$~dB and therefore not directly comparable.  Runs
 \run{ecg/20260925T153739Z-mailed1800} and \run{ecg/20260925T165741Z-mailedfull}.}

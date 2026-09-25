@@ -6,32 +6,31 @@ Overleaf; `standalone.pdf` builds it), `notes/reply-to-bodo-draft.md` (e-mail; f
 
 ## State at close
 * Review 004: every code finding closed (resolution table at the end of `reviews/004-inbox.md`).
-* All laptop runs regenerated here from clean commits; where they overlap they are bit-identical.
-  The laptop run dirs (`*/20260918T*`) exist only on the laptop; the report now cites the
+* All laptop runs regenerated here from clean commits; where they overlap they agree with
+  every recorded laptop value to the last digit. The laptop run dirs (`*/20260918T*`) exist only on the laptop; the report now cites the
   `20260925` runs (the compute paragraph names both).
-* Iris 20-seed × {merge, drop} sweep done; Fig 9 verdict (pre-registered): **not reproduced** —
-  prototype selectivity ≫ classic, coverage < classic, angle covering ρ ≈ 0. New read-out
-  finding: the level scale refitted on the evaluated set makes labels depend on the other
-  evaluated codes (seed 18 drop: 39 % vs 94 %); `iris.model.calibrated_accuracy` fits it on
-  the training codes. Both reported.
+* Iris 20-seed × {merge, drop} sweep done; Fig 9 verdict (pre-registered, on z-scores vs each
+  layer's own untrained null): **not reproduced**. Raw values (review 005 B1): the prototype layer
+  covers more of the data but already does so untrained (0.79 vs 0.39); classic neurons are more
+  selective on every run; angle covering ρ ≈ 0 for the prototype. Read-out finding: the level
+  scale refitted on the evaluated set is transductive (seed 18 drop: 39 % vs 94 %);
+  `iris.model.calibrated_accuracy` fits it on the training codes. Both reported.
 * ECG full 7700-sample trace run: same shape as the 1800 window; Table I 2/3-neuron discrepancy
   stands.
-* Codex review 005 of this session's diff: brief `notes/briefs/codex-05-session5-review.md`;
-  status in the worklog entry (launched at close if not filed in `reviews/005-*.md`).
+* Codex review 005 filed and closed (`reviews/005-session5.md`): 3 blockers, 5 majors, 3 minors,
+  all fixed; the Fig 9 prose was corrected, the verdict did not change.
 
 ## Work queue, in order
-1. **Codex review 005**: file the review as `reviews/005-session5.md`, fix or decline each finding
-   with a resolution table, re-run `sh scripts/check-all.sh`, rebuild both PDFs.
-2. **Send to the co-author** (Tobias): copy the `figures-needed.txt` figures next to the overleaf
+1. **Send to the co-author** (Tobias): copy the `figures-needed.txt` figures next to the overleaf
    files, `latexmk -pdf standalone.tex`, fill [SLOTS] in the reply draft, send.
-3. **ECG 2/3-neuron gap** (optional, workstation, ≈1.5–2.5 h — split it): the prototype-3 cell
+2. **ECG 2/3-neuron gap** (optional, workstation, ≈1.5–2.5 h — split it): the prototype-3 cell
    scores below prototype-2 on both windows, which points at optimisation (40 sweeps × 8
    restarts) rather than the model. Test with `--iterations 100` (the library default) on the
    1800 window before blaming the paper.
-4. **E1 control** (optional): full-batch sample-wise training with ordinary sweeps
+3. **E1 control** (optional): full-batch sample-wise training with ordinary sweeps
    (`--iterative-config` switch in `bitcount_figs.py`).
-5. Shot-noise programme items 4–6.
-6. Racetrack / Adam / multi-layer packages from the co-author: do not port; offer a review.
+4. Shot-noise programme items 4–6.
+5. Racetrack / Adam / multi-layer packages from the co-author: do not port; offer a review.
 
 ## Rules that bit us
 * `uv sync --group dev` alone UNINSTALLS the optional extras (qiskit, cupy): use

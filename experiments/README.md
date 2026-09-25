@@ -47,7 +47,7 @@ All accept `--out` and a seed; `--help` lists the rest. GPU-capable scripts need
 | bitcount (E2, iterative baseline) | `20260925T153548Z` (6 seeds × 1e5 elementary steps; seeds 0–3 = laptop run `20260918T111515Z` bit for bit) | a2dd8da | tex §4 Fig 6 (both panels) |
 | ecg (mailed recording) | `20260925T153739Z-mailed1800` (= laptop `20260918T132924` in every cell), `20260925T165741Z-mailedfull` (7700 samples) | 6c8857f | tex §4 `tab:ecg-mailed` |
 | iris (sweep) | `20260925T*-seed{0..19}-{merge,drop}` (40 dirs; launcher/logs in `iris/sweep-4915fa2/`) | 4915fa2 | iris_sweep |
-| iris_sweep | `20260925T173530Z` (`--calibrated`) | a80ad50 | tex §4 Iris, STATE scoreboard |
+| iris_sweep | `20260925T175903Z` (`--calibrated`; supersedes `…173530Z`, which lacked raw firing values) | a6b69a3 | tex §4 Iris, STATE scoreboard |
 | codex | `NN-events.jsonl`, `NN-err.log` | — | raw Codex transcripts behind `reviews/` and `tests/oracle/` |
 
 ## Rules

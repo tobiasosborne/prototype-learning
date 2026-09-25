@@ -40,12 +40,14 @@ from Fig.~8; labels predicted by nearest rounding of the read-out weight, after 
 scale (the class weights $1:4:9$ are known only up to a constant) is fitted by least squares in
 log space.  Fitted on the evaluated set, as in the paper's wording, the scale makes a flower's
 label depend on the other flowers in the set; fitted once on the training set it does not.  Both
-are reported; the second is the one we quote as a held-out accuracy.
+are reported; the second is the one we quote as an inductive accuracy.
 \item[Fig.~9 criterion (\cref{sec:iris}).]  The t-SNE picture is replaced by a firing-based
 coverage and selectivity score ($z$-scores against 1\,000 untrained layers from the
 initialisation) and an angle-based covering score $\rho$; the pass criterion (20 seeds, both
-firing scores positive and above the classic layer's at $p<0.01$, median $\rho\ge 0.5$) was
-fixed before the seeds were run.
+firing $z$-scores positive and above the classic layer's at $p<0.01$, median $\rho\ge 0.5$) was
+fixed before the seeds were run.  The $z$-scores measure what training changed relative to each
+layer's own untrained spread; the raw coverage and selectivity, which compare the two layers
+directly, are reported beside them.
 \item[Flappy (\cref{sec:flappy}).]  Our own clone: 288$\times$512 screen, flap impulse $-7$, gap
 120, pipe spacing 180, gravity 1 (the classic constants are unplayable by a memoryless two-feature
 policy); reward 0.01 per frame plus 1 per pipe, tracking term $|{\rm height}-{\rm gap}|$ with

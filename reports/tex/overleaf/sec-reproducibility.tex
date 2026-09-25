@@ -36,22 +36,23 @@ Iterative baseline &
   assumed \\
 Iris learning curves &
   classic overfits, prototype does not &
-  classic test loss rises after 1--4 sweeps; the prototype's falls monotonically; over 20
-  seeds the classic test loss rises on 8, the prototype's on 2 & reproduced \\
+  classic test loss rises after 1--4 sweeps; the prototype's keeps falling; over 20 seeds the
+  classic test loss ends $>5\,\%$ above its minimum on 8 (merge) / 7 (drop), the prototype's on
+  2 / 0 & reproduced \\
 Iris accuracy & $\approx 98\,\%$ &
   $95 / 91 / 98\,\%$ on three splits (encoding ceilings $97 / 99 / 99\,\%$); over 20 seeds
   $94.3\pm2.8\,\%$ (classic $93.9\pm2.7\,\%$), $96.4\,\%$ on the filtered set when ambiguous
   codes are dropped & $2$--$4$ points short; no architecture advantage \\
 Iris weight picture (t-SNE) & prototype weights span the data &
-  t-SNE: both weight sets cluster away from the data.  Scored over 20 seeds: prototype neurons
-  far more selective than classic (median $z$ $+18$ vs $+1.8$), but cover the data less ($+0.6$
-  vs $+2.2$); angles do not decode to data patterns & discrepancy (criterion fixed in
+  t-SNE: both weight sets cluster away from the data.  Scored over 20 seeds: the prototype
+  layer covers more codes than the classic one, but already does so untrained; training makes it
+  more selective, yet less so than the classic layer; angles do not decode to data patterns & discrepancy (criterion fixed in
   advance) \\
 Flappy Bird & ``plays perfectly'' &
   $110/110$ pipes (the frame cap) on all 20 held-out game seeds & reproduced, own clone \\
 ECG PSNR, 1/2/3 hidden neurons & $32.9 / 40.00 / 40.04$~dB &
   $37.4 / 38.0 / 38.1$~dB on a synthetic signal of the same form; $36.8 / 37.5 / 36.9$~dB on the
-  authors' own recording ($37.8 / 37.8 / 36.3$~dB on all $7\,700$ samples) & within
+  authors' own recording ($37.8 / 37.8 / 36.2$~dB on all $7\,700$ samples) & within
   $\approx 2$~dB on the synthetic signal; on the original recording the 1-neuron cell
   reproduces, the 2- and 3-neuron cells fall $2$--$4$~dB short \\
 \bottomrule
@@ -88,9 +89,10 @@ than published ($2.8$~dB against $0.2$~dB) --- while the two- and three-neuron p
 fall $2.5$--$3.2$~dB short and the ordering at three neurons inverts; the full
 $7\,700$-sample recording gives the same shape (\cref{app:ecg}).  One does not: the weight
 picture of \cref{fig:tsne}.  In the agents' embedding both weight sets cluster away from the
-data; scored instead over 20 seeds against a criterion fixed in advance, trained prototype
-neurons are far more selective than classic ones but do not cover the data better, and their
-angles do not decode to data patterns.  It is recorded as a discrepancy rather than tuned away,
+data; scored instead over 20 seeds against a criterion fixed in advance, the prototype layer
+covers more of the data than the classic one, but an untrained prototype layer already does, so
+the effect is the architecture's rather than training's; the trained angles do not decode to
+data patterns.  It is recorded as a discrepancy rather than tuned away,
 and \cref{app:iris} states what was tried.  The iterative baseline of \cref{fig:OptConv} was a second
 such failure until the agents found that they had been grading it with the superposition
 $\KL$ while the scheme trains the per-input activations; in its own observable it reaches

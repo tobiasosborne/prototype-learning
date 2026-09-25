@@ -6,8 +6,9 @@
 the bit-count histogram and its convergence, the Iris overfitting contrast, perfect Flappy play
 (on our clone) and the ECG denoising numbers (within 2~dB on a different signal) all come out of
 a clean-room implementation.  What does not: the weight picture of Fig.~9 --- scored over 20
-seeds against a criterion fixed in advance, trained prototype neurons are far more selective than
-classic ones but do not cover the data better, and their angles do not decode to data patterns
+seeds against a criterion fixed in advance, the prototype layer does cover more of the data than
+the classic one, but an untrained prototype layer already does, so the effect is the
+architecture's rather than training's, and the trained angles do not decode to data patterns
 (\cref{sec:iris}) --- and --- once the paper's own ECG recording reached us and removed
 the signal as an excuse --- the upper half of Table~I, where our two- and three-neuron prototype
 cells fall $2.5$--$3.2$~dB short ($2.2$--$3.8$~dB on the full recording) while the one-neuron cell reproduces with a \emph{larger}
@@ -59,11 +60,14 @@ term.
 wrong numbers --- a state-preparation gate count off by a factor of two, a sentence with its
 inequality reversed, costs computed by hand.  The fix was a script that emits every number and
 refuses to run if any calibration input lacks a source; the report now quotes only that script.
-\item \textbf{A read-out calibrated on the evaluated set is not a held-out accuracy.}  The Iris
-labels are rounded after one overall scale is fitted; fitted on the test set itself, it let
-three removed test flowers change the predicted labels of most of the rest ($94\,\% \to 39\,\%$ on
-one seed).  Only the 20-seed sweep exposed it; one seed would not have.  Calibrate on the
-training data, and state the pass criterion before running the seeds.
+\item \textbf{A read-out calibrated on the evaluated set is transductive.}  The Iris labels are
+rounded after one overall scale is fitted; fitted on the test set itself (no test labels are
+used), it makes a flower's label depend on which other flowers are evaluated with it: removing
+the 13 test flowers that carry three ambiguous codes changed the labels of most of the rest
+($94\,\% \to 39\,\%$ on one seed).  Only the 20-seed sweep exposed it; one seed would not have.
+Calibrate on the training data, state the pass criterion before running the seeds --- and when a
+score is a $z$-score against each model's own baseline, do not read it as a comparison between
+the models (a review caught us doing exactly that).
 \end{enumerate}
 
 \paragraph{Not done, and why.}

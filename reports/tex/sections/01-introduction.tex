@@ -39,13 +39,16 @@ number of a quantum computer carries, in the repository, the URL it was read fro
 a verbatim quotation (\cref{app:provenance}).
 
 \paragraph{Compute discipline.}
-Two machines were used and every run directory records which.  The August 2026 runs --- the
+Two machines were used.  Run directories from 25 September 2026 record the machine (host name,
+platform, cores used) in their \code{meta.json}; for earlier ones the machine is attributed by
+date.  The August 2026 runs --- the
 reproduction, the noise study and the hardware plan, i.e.\ everything whose time stamp begins
 \code{202608} --- ran on one workstation (64 cores, one RTX~3090 GPU).  Three runs of
 18 September 2026 (\run{bitcount/20260918T111515Z}, \run{ecg/20260918T132924},
 \run{iris/20260918T085641Z-drop}) ran on a 12-thread laptop with no GPU; the runs of
 25 September (\code{20260925}) ran on the workstation again, from clean commits, and reproduce
-every laptop number they overlap bit for bit.  Wall times are quoted with the number of cores
+to the last recorded digit every laptop number they overlap (the laptop run directories are not
+on the workstation; the comparison is against the values recorded from them).  Wall times are quoted with the number of cores
 actually used.  No single run was allowed to exceed about two
 hours; two studies that would have (noise-aware training of the 11-qubit bit-count network,
 $\approx 13$ hours for its grid; the full ECG/Iris noise grid, $\approx 8$ hours) were
@@ -67,11 +70,11 @@ Fig.~3, activation surface & $(0,1)\!\to\!\max$, $(1,0)\!\to\!0$ & $1.000$ / $0.
 Fig.~5, target histogram & bar heights & $(\text{number of ones}+1)/112$, all 32 bars within $0.0002$ & reproduced \\
 Fig.~6, superposition training & $\KL\approx 0$ in $\approx 8$ iterations & median $<0.005$ at sweep 9; $5/6$ seeds $<10^{-3}$ at 20 & reproduced \\
 Fig.~6, iterative baseline & $\KL\approx 0$ by $\approx 120$ & per-input $\KL<10^{-3}$ for $4/6$ seeds within $10^5$ elementary steps (a fifth reaches $1.4\times10^{-3}$); the superposition $\KL$ is a different observable & reproduced in the per-input observable; iteration unit assumed \\
-Fig.~7, Iris learning curves & classic overfits, prototype does not & classic test loss rises after 1--4 sweeps; prototype's falls monotonically; over 20 seeds the classic test loss rises on 8, the prototype's on 2 & reproduced \\
+Fig.~7, Iris learning curves & classic overfits, prototype does not & classic test loss rises after 1--4 sweeps; prototype's keeps falling; over 20 seeds the classic test loss ends $>5\,\%$ above its minimum on 8 (merge) / 7 (drop), the prototype's on 2 / 0 & reproduced \\
 Iris accuracy & $\approx 98\,\%$ & $95$ / $91$ / $98\,\%$ on three splits (ceilings $97$ / $99$ / $99\,\%$); over 20 seeds $94.3\pm2.8\,\%$ (classic $93.9\pm2.7\,\%$), $96.4\,\%$ on the filtered set when ambiguous codes are dropped & $2$--$4$ points short; no architecture advantage \\
-Fig.~9, Iris weight picture & prototype weights span the data & t-SNE: both weight sets cluster away from the data.  Scored over 20 seeds: prototype neurons far more selective than classic (median $z$ $+18$ vs $+1.8$), but cover the data less ($+0.6$ vs $+2.2$); angles do not decode to data patterns & discrepancy (criterion fixed in advance) \\
+Fig.~9, Iris weight picture & prototype weights span the data & t-SNE: both weight sets cluster away from the data.  Scored over 20 seeds: the prototype layer covers more codes than the classic one, but already does so untrained; training makes it more selective, yet less so than the classic layer; angles do not decode to data patterns & discrepancy (criterion fixed in advance) \\
 Flappy Bird & ``plays perfectly'' & $110/110$ pipes (the cap) on $20/20$ held-out games & reproduced (own clone) \\
-Table~I, ECG PSNR (1/2/3 hidden) & $32.9$ / $40.00$ / $40.04$~dB & $37.4$ / $38.0$ / $38.1$~dB (synthetic signal); $36.8$ / $37.5$ / $36.9$~dB on the paper's own recording ($37.8$ / $37.8$ / $36.3$~dB on all $7\,700$ samples) & within $\approx 2$~dB on synthetic; on the original recording 1-neuron reproduced, 2/3-neuron $2$--$4$~dB short \\
+Table~I, ECG PSNR (1/2/3 hidden) & $32.9$ / $40.00$ / $40.04$~dB & $37.4$ / $38.0$ / $38.1$~dB (synthetic signal); $36.8$ / $37.5$ / $36.9$~dB on the paper's own recording ($37.8$ / $37.8$ / $36.2$~dB on all $7\,700$ samples) & within $\approx 2$~dB on synthetic; on the original recording 1-neuron reproduced, 2/3-neuron $2$--$4$~dB short \\
 \bottomrule
 \end{tabularx}
 \end{table}

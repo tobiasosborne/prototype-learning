@@ -4,7 +4,8 @@
 Workstation (64 cores, RTX 3090, orkan). Review 004 closed; every laptop run regenerated here from
 clean commits and bit-identical where it overlaps; HANDOFF queue items 1–3 of session 4 done. Fig 9
 scored over 20 seeds × 2 policies against a pre-registered criterion: not reproduced. New Iris
-read-out finding (set-refitted scale). Main report and Overleaf updated; Codex review 005 pending.
+read-out finding (set-refitted scale). Main report and Overleaf updated. Codex review 005 closed:
+its blocker corrected our reading of the Fig 9 z-scores (raw values rank the layers differently).
 
 ## What was done
 - Mailed ECG `.mat` files recovered from Thunderbird (Windows profile, uni-hannover INBOX,
@@ -20,7 +21,7 @@ read-out finding (set-refitted scale). Main report and Overleaf updated; Codex r
   (40 runs, 20 at a time × 2 procs, ≈30 min each).
 - `experiments/iris_sweep_summary.py` (+ tests): pre-registered verdict rules, both accuracies,
   Fig 7 contrast; `--calibrated` adds `iris.model.calibrated_accuracy` (scale fitted on the
-  training codes). Summary `iris_sweep/20260925T173530Z`.
+  training codes). Summary `iris_sweep/20260925T175903Z` (after review 005; `…173530Z` superseded).
 - Report: Fig 6 regenerated (both panels, one six-seed run); §4 bit-count, Iris ("Fig. 9,
   scored", "Ambiguous codes, and how labels are read out"), ECG (full-trace row); scoreboard,
   learnings (new item 9), assumptions, provenance, compute paragraph. Overleaf mirrored by an Opus
@@ -34,6 +35,11 @@ read-out finding (set-refitted scale). Main report and Overleaf updated; Codex r
   and per-sample set-refitted read-outs agree on all 80 model×run cells; only the scale-fit set
   matters.
 
+- Codex review 005 (`reviews/005-session5.md`): B1 z-scores against each layer's own null were
+  read as a between-architecture comparison — raw values say prototype covers more (but already
+  untrained), classic is more selective; B2 classic angle CI; B3 reply arithmetic; M1–M5, m1–m3.
+  All fixed; summary regenerated as `iris_sweep/20260925T175903Z`; 516 passed; both PDFs build.
+
 ## Gotchas for future agents
 - `uv sync --group dev` without `--all-extras` uninstalls qiskit/cupy (20 tests then skip).
 - `pytest` without `-m "not slow"` runs the slow ECG tests on every core.
@@ -41,6 +47,7 @@ read-out finding (set-refitted scale). Main report and Overleaf updated; Codex r
 - The set-refitted Iris accuracy (`accuracy`, `test` in results.json) is transductive; quote
   `calibrated_accuracy` as the held-out number.
 - Prototype-3 ECG scores below prototype-2 on both windows: suspect optimisation budget first.
+- A z-score against a model's OWN baseline is not a comparison between models; report raw values.
 
 # (earlier: session 4)
 
