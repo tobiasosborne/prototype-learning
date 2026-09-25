@@ -292,10 +292,15 @@ def dead_hidden_neurons(
     with its neighbours".  ``[ASSUMPTION]`` ``tol_rel = 0.1`` — one order of magnitude below the
     strongest neuron; ``tol_abs = 0.0`` (off) by default.
 
-    By construction the strongest neuron is never flagged unless ``tol_abs`` says so.
+    By construction the strongest neuron is never flagged unless ``tol_abs`` says so — or
+    unless it has no drive at all: when ``max_k drive_k == 0`` the layer is exactly decoupled
+    from the output and EVERY neuron is dead (review 004 M5; the strict relative test
+    ``drive < tol_rel · 0`` alone would have called such a layer alive).
     """
     drive = output_drive(net, params)
     strongest = float(drive.max()) if drive.size else 0.0
+    if strongest <= 0.0:
+        return np.ones(drive.shape, dtype=np.bool_)
     return np.asarray((drive < tol_rel * strongest) | (drive < tol_abs), dtype=np.bool_)
 
 
@@ -483,7 +488,8 @@ def _hidden_layer_factors(net: Network, params: npt.ArrayLike) -> tuple[Complex,
 
     Cost ``O(n_inputs · 4^n_hidden)`` per code instead of ``O(gates · 2^(n_inputs+n_hidden))``
     — 13 ms instead of 2.5 s for the 12→4 Iris layer over 13 codes.  Pinned to the reference
-    backend in ``test_firing_matrix_agrees_with_the_reference_backend``.
+    backend on the FULL hidden-register density matrix (coherences and correlations, not only
+    marginals) in ``test_hidden_register_state_is_the_reference_partial_trace``.
     """
     nh = net.n_hidden
     hidden, _ = net.unpack(params)
@@ -507,6 +513,33 @@ def _hidden_layer_factors(net: Network, params: npt.ArrayLike) -> tuple[Complex,
                 circ.append(ir.crx(0, 1 + j, angles[i]))  # [PTQNN Fig 1]
         factors.append(batched.basis_columns(circ, range(1 + nh)).reshape(2, dim, 2, dim))
     return rho0, factors
+
+
+def _evolve_hidden(rho0: Complex, factors: list[Complex], code: int, n_inputs: int) -> Complex:
+    """Apply the per-input channels of :func:`_hidden_layer_factors` for the basis input ``code``.
+
+    ``ρ ← Σ_b K_b ρ K_b†`` with ``K_b = ⟨b| U_i |c_i⟩``, input qubit 0 = MSB of the code.
+    """
+    rho = rho0
+    for i, u in enumerate(factors):
+        b_in = (int(code) >> (n_inputs - 1 - i)) & 1
+        k0, k1 = u[0, :, b_in, :], u[1, :, b_in, :]
+        rho = k0 @ rho @ k0.conj().T + k1 @ rho @ k1.conj().T
+    return rho
+
+
+def hidden_register_state(net: Network, params: npt.ArrayLike, code: int) -> Complex:
+    """``(2^n_hidden, 2^n_hidden)`` — the hidden register after the hidden layer, input ``|code⟩``.
+
+    The full reduced density matrix ``Tr_inputs[U_hidden (|code⟩⟨code| ⊗ |0…0⟩⟨0…0|) U_hidden†]``
+    (hidden qubit 0 = MSB), computed by the exact per-input factorisation of
+    :func:`_hidden_layer_factors`; :func:`firing_matrix` reads its diagonal.  It is the state
+    BEFORE the output neuron: that neuron uses the hidden qubits as controls only
+    ``[PTQNN Fig 4]`` and so acts on this matrix as the Schur-product channel
+    ``ρ_hk ↦ ρ_hk · cos((a_h − a_k)/2)``, ``a_h = b + Σ_j h_j w_j`` — diagonal untouched.
+    """
+    rho0, factors = _hidden_layer_factors(net, params)
+    return _evolve_hidden(rho0, factors, code, net.n_inputs)
 
 
 def _hidden_bit_table(n_hidden: int) -> Real:
@@ -550,11 +583,7 @@ def firing_matrix(
     rho0, factors = _hidden_layer_factors(net, params)
     bits = _hidden_bit_table(nh)
     for m, code in enumerate(uniq):
-        rho = rho0
-        for i, u in enumerate(factors):
-            b_in = (int(code) >> (net.n_inputs - 1 - i)) & 1  # input qubit 0 = MSB of the code
-            k0, k1 = u[0, :, b_in, :], u[1, :, b_in, :]
-            rho = k0 @ rho @ k0.conj().T + k1 @ rho @ k1.conj().T
+        rho = _evolve_hidden(rho0, factors, int(code), net.n_inputs)
         out[:, m] = np.real(np.diag(rho)) @ bits
     return out
 
@@ -616,7 +645,7 @@ def firing_placement(
     net: Network,
     params: npt.ArrayLike,
     codes: Codes,
-    n_draws: int = 200,
+    n_draws: int = 1000,
     seed: int = 0,
     init_scale: float = IrisConfig.init_scale,
     backend: Backend | None = None,
@@ -638,7 +667,9 @@ def firing_placement(
     z-score (rather than, say, a rank) and the choice of the *initialisation* distribution as
     the null: it is the only parameter distribution the paper fixes anything about, and it makes
     "the prototype layer ends up on the data" a statement about what training did, not about the
-    architecture's prior.  A degenerate null (``std < 1e-12``) yields ``0.0``.
+    architecture's prior.  A degenerate null (``std < 1e-12``) yields ``0.0``.  ``n_draws``
+    defaults to 1000, the repository's floor for statistical statements (review 004 M6; ≈ 7 ms
+    per draw on the 12→4 layer over 13 codes).
 
     Reproducing ``[PTQNN Fig 9]``'s claim in these terms means: over ≥ 20 (seed, split) pairs,
     the prototype network has ``rho_f > 0`` AND ``rho_f_selectivity > 0`` (training moved both

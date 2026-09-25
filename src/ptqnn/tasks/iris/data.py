@@ -38,6 +38,11 @@ Choices the papers do not fix (``PLAN.md §0``):
   ambiguous patterns were removed; it is silent on the test set.  We filter both sides because
   an ambiguous pattern cannot be scored either — its code maps to two different labels, so no
   function of the code can classify it, and the encoding ceiling is 1.0 only if it is gone.
+  That filter reads the *test labels*, so an accuracy on the filtered test set is conditional
+  on them, not an ordinary held-out accuracy (review 004 M3: seed 0 drops 18 of 100 test
+  samples; the same models score 97.6 % on the 82 kept and 95.0 % on all 100).  The split
+  therefore also carries the unfiltered test set (``test_codes_all``, ``test_labels_all``) and
+  every report quotes both numbers.
 """
 
 from __future__ import annotations
@@ -154,6 +159,23 @@ AmbiguousPolicy = Literal["merge", "drop"]
 """How to treat a code that carries ≥ 2 distinct labels; default "merge" keeps old numbers."""
 
 
+def unambiguous_mask(codes: Codes, labels: npt.ArrayLike) -> tuple[npt.NDArray[np.bool_], int]:
+    """``(keep, n_ambiguous)``: ``keep[k]`` is False iff code ``k`` occurs with ≥ 2 labels.
+
+    ``n_ambiguous`` counts DISTINCT ambiguous codes.  The mask lets callers filter any array
+    aligned with ``codes`` (e.g. the dataset row indices in :func:`load_split`) consistently.
+    """
+    c = np.asarray(codes, dtype=np.int64)
+    y = np.asarray(labels, dtype=np.int64)
+    if c.shape != y.shape:
+        raise ValueError(f"codes {c.shape} and labels {y.shape} must have the same shape")
+    # distinct (code, label) pairs; a code appearing in ≥ 2 of them is ambiguous
+    pairs = np.unique(np.stack([c, y]), axis=1)
+    amb_codes, n_labels = np.unique(pairs[0], return_counts=True)
+    ambiguous = amb_codes[n_labels > 1]
+    return ~np.isin(c, ambiguous), int(ambiguous.size)
+
+
 def drop_ambiguous_codes(codes: Codes, labels: npt.ArrayLike) -> tuple[Codes, Codes, int]:
     """Remove every sample whose code occurs with ≥ 2 distinct labels.
 
@@ -165,14 +187,8 @@ def drop_ambiguous_codes(codes: Codes, labels: npt.ArrayLike) -> tuple[Codes, Co
     """
     c = np.asarray(codes, dtype=np.int64)
     y = np.asarray(labels, dtype=np.int64)
-    if c.shape != y.shape:
-        raise ValueError(f"codes {c.shape} and labels {y.shape} must have the same shape")
-    # distinct (code, label) pairs; a code appearing in ≥ 2 of them is ambiguous
-    pairs = np.unique(np.stack([c, y]), axis=1)
-    amb_codes, n_labels = np.unique(pairs[0], return_counts=True)
-    ambiguous = amb_codes[n_labels > 1]
-    keep = ~np.isin(c, ambiguous)
-    return c[keep], y[keep], int(ambiguous.size)
+    keep, n_ambiguous = unambiguous_mask(c, y)
+    return c[keep], y[keep], n_ambiguous
 
 
 def encoding_accuracy_ceiling(codes: Codes, labels: Codes) -> float:
@@ -185,7 +201,14 @@ def encoding_accuracy_ceiling(codes: Codes, labels: Codes) -> float:
 
 @dataclass(frozen=True)
 class IrisSplit:
-    """A seeded stratified split with its train-only binarisation."""
+    """A seeded stratified split with its train-only binarisation.
+
+    Invariant, under every policy: ``train_index[k]`` is the row of :func:`load_iris_xy` that
+    produced ``train_codes[k]`` and ``train_labels[k]`` (likewise for the test side), so a
+    dropped sample is gone from the index arrays too.  ``centers`` are fitted on ALL training
+    rows, before any drop.  ``test_codes_all``/``test_labels_all`` are the unfiltered test set
+    (identical to ``test_codes``/``test_labels`` under "merge").
+    """
 
     train_index: Codes
     test_index: Codes
@@ -193,6 +216,9 @@ class IrisSplit:
     train_labels: Codes
     test_codes: Codes
     test_labels: Codes
+    test_codes_all: Codes
+    """Every test sample, ambiguous codes included — the ordinary held-out set."""
+    test_labels_all: Codes
     centers: Real
     seed: int
     train_size: float
@@ -219,6 +245,7 @@ class IrisSplit:
             "train_size": self.train_size,
             "n_train": int(self.train_codes.size),
             "n_test": int(self.test_codes.size),
+            "n_test_unfiltered": int(self.test_codes_all.size),
             "distinct_train_codes": int(tr.codes.size),
             "distinct_test_codes": int(te.codes.size),
             "shared_codes": int(np.intersect1d(tr.codes, te.codes).size),
@@ -226,6 +253,9 @@ class IrisSplit:
             "test_collisions": te.n_collisions,
             "train_ceiling": encoding_accuracy_ceiling(self.train_codes, self.train_labels),
             "test_ceiling": encoding_accuracy_ceiling(self.test_codes, self.test_labels),
+            "test_ceiling_unfiltered": encoding_accuracy_ceiling(
+                self.test_codes_all, self.test_labels_all
+            ),
             "ambiguous": self.ambiguous,
             "n_dropped_train": self.n_dropped_train,
             "n_dropped_test": self.n_dropped_test,
@@ -242,7 +272,9 @@ def load_split(
     With ``ambiguous="drop"`` (``[Rosenhahn e-mail 2026-08-21]``, "I removed binary patterns
     which were assigned to two classes") every code with ≥ 2 distinct labels is removed from
     BOTH splits before the same-class merge; ``[ASSUMPTION]`` the test set is filtered too — an
-    ambiguous pattern cannot be scored either, and the e-mail fixes only the training set.
+    ambiguous pattern cannot be scored either, and the e-mail fixes only the training set.  The
+    row indices are filtered with the codes; the unfiltered test set is kept alongside
+    (``test_codes_all``) because the test-side filter reads the test labels (review 004 M3).
     """
     x, y = load_iris_xy()
     idx = np.arange(x.shape[0], dtype=np.int64)
@@ -250,19 +282,23 @@ def load_split(
     tr, te = np.sort(np.asarray(tr, dtype=np.int64)), np.sort(np.asarray(te, dtype=np.int64))
     centers = fit_centers(x[tr], seed=seed)
     train_codes, train_labels = encode_dataset(x[tr], centers, y[tr])
-    test_codes, test_labels = encode_dataset(x[te], centers, y[te])
+    test_codes_all, test_labels_all = encode_dataset(x[te], centers, y[te])
     if ambiguous == "drop":
-        train_codes, train_labels, n_dropped_train = drop_ambiguous_codes(train_codes, train_labels)
-        test_codes, test_labels, n_dropped_test = drop_ambiguous_codes(test_codes, test_labels)
+        keep_tr, n_dropped_train = unambiguous_mask(train_codes, train_labels)
+        keep_te, n_dropped_test = unambiguous_mask(test_codes_all, test_labels_all)
     else:
+        keep_tr = np.ones(tr.size, dtype=np.bool_)
+        keep_te = np.ones(te.size, dtype=np.bool_)
         n_dropped_train = n_dropped_test = 0
     return IrisSplit(
-        train_index=tr,
-        test_index=te,
-        train_codes=train_codes,
-        train_labels=train_labels,
-        test_codes=test_codes,
-        test_labels=test_labels,
+        train_index=tr[keep_tr],
+        test_index=te[keep_te],
+        train_codes=train_codes[keep_tr],
+        train_labels=train_labels[keep_tr],
+        test_codes=test_codes_all[keep_te],
+        test_labels=test_labels_all[keep_te],
+        test_codes_all=test_codes_all,
+        test_labels_all=test_labels_all,
         centers=centers,
         seed=seed,
         train_size=train_size,

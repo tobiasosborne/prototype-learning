@@ -1,15 +1,18 @@
 """Red-phase tests for the Iris task ``[PTQNN §III.C, Fig 7–9]``, ``[SNN §IV.B]``."""
 
 import importlib.util
+import inspect
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
 
 from ptqnn.backends import reference as ref
-from ptqnn.circuits.neurons import Network
+from ptqnn.circuits import ir
+from ptqnn.circuits.neurons import Network, classic_neuron, prototype_neuron
 from ptqnn.tasks.iris import data as iris_data
 from ptqnn.tasks.iris import model as iris_model
 from ptqnn.tasks.iris import train as iris_train
@@ -19,6 +22,18 @@ from ptqnn.train import losses
 @pytest.fixture(scope="module")
 def split() -> iris_data.IrisSplit:
     return iris_data.load_split(seed=0)
+
+
+@pytest.fixture(scope="module")
+def script() -> ModuleType:
+    """``experiments/iris_fig7_fig8_fig9.py`` imported as a module (it is not a package)."""
+    path = Path(__file__).resolve().parents[1] / "experiments" / "iris_fig7_fig8_fig9.py"
+    spec = importlib.util.spec_from_file_location("iris_fig7_fig8_fig9", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["iris_fig7_fig8_fig9"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_every_code_has_exactly_four_ones(split: iris_data.IrisSplit) -> None:
@@ -109,6 +124,38 @@ def test_default_split_is_bit_for_bit_the_merge_split() -> None:
         np.testing.assert_array_equal(a, b)
     assert default.n_dropped_train == 0 and default.n_dropped_test == 0
     assert merge.n_dropped_train == 0 and merge.n_dropped_test == 0
+
+
+def test_drop_policy_keeps_the_unfiltered_test_set_and_consistent_indices() -> None:
+    # Review 004 M3: the drop policy removes test samples by their own labels, so its test
+    # accuracy is conditional on the labels.  The split must therefore also carry the
+    # UNFILTERED test set (the ordinary held-out set, identical to the merge split's), and
+    # train_index/test_index must be filtered together with the codes: index k of the index
+    # array is the dataset row that produced code k and label k, under every policy.
+    x, y = iris_data.load_iris_xy()
+    merge = iris_data.load_split(seed=0)
+    drop = iris_data.load_split(seed=0, ambiguous="drop")
+    np.testing.assert_array_equal(drop.test_codes_all, merge.test_codes)
+    np.testing.assert_array_equal(drop.test_labels_all, merge.test_labels)
+    assert drop.test_codes.size < drop.test_codes_all.size
+    np.testing.assert_array_equal(merge.test_codes_all, merge.test_codes)
+    np.testing.assert_array_equal(merge.test_labels_all, merge.test_labels)
+    for s in (merge, drop):
+        for idx, codes, labels in (
+            (s.train_index, s.train_codes, s.train_labels),
+            (s.test_index, s.test_codes, s.test_labels),
+        ):
+            assert idx.size == codes.size == labels.size
+            enc_codes, enc_labels = iris_data.encode_dataset(x[idx], s.centers, y[idx])
+            np.testing.assert_array_equal(enc_codes, codes)
+            np.testing.assert_array_equal(enc_labels, labels)
+    # dropping selects rows; the k-means centres are fitted on ALL training rows, before the drop
+    assert np.isin(drop.train_index, merge.train_index).all()
+    assert np.isin(drop.test_index, merge.test_index).all()
+    np.testing.assert_array_equal(drop.centers, merge.centers)
+    summary = drop.summary()
+    assert summary["n_test_unfiltered"] == merge.test_codes.size
+    assert summary["n_test"] == drop.test_codes.size
 
 
 def test_superposition_state_is_normalised_and_supported_on_the_codes() -> None:
@@ -412,6 +459,87 @@ def test_firing_matrix_is_a_probability_and_matches_the_reference_backend(hidden
     np.testing.assert_allclose(iris_train.firing_matrix(net, params, dup), fast, atol=1e-15)
 
 
+def _reference_hidden_state(
+    net: Network, params: np.ndarray, code: int, full_network: bool
+) -> np.ndarray:
+    """``2^n_hidden`` square reduced state of the hidden register, from the numpy oracle.
+
+    The code is prepared as a basis state on the input register, the circuit is run as one
+    ``n_qubits`` statevector, and everything but the hidden register is traced out.
+    ``full_network=False`` builds the hidden layer alone from the public neuron builders
+    ``[PTQNN Fig 1, Fig 2]`` (the output qubit stays in ``|0⟩``); ``True`` runs
+    :meth:`Network.circuit`, output neuron included.
+    """
+    psi0 = iris_model.dataset_superposition(
+        np.array([code], dtype=np.int64), net.n_qubits, net.input_qubits
+    )
+    if full_network:
+        circ = net.circuit(params, initial_state=psi0)
+    else:
+        hidden, _ = net.unpack(params)
+        circ = ir.Circuit(net.n_qubits, initial_state=psi0)
+        for hq, (angles, last) in zip(net.hidden_qubits, hidden, strict=True):
+            if net.hidden == "prototype":
+                circ.extend(prototype_neuron(net.input_qubits, hq, angles, last))
+            else:
+                circ.extend(classic_neuron(net.input_qubits, hq, angles, last))
+    psi = ref.run_statevector(circ).reshape(2**net.n_inputs, 2**net.n_hidden, 2)
+    return np.einsum("iho,iko->hk", psi, psi.conj())
+
+
+@pytest.mark.parametrize("scale", [0.7, np.pi])
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_hidden_register_state_is_the_reference_partial_trace(hidden: str, scale: float) -> None:
+    # Review 004 M4 / "test channels, not marginals": the fast route's claim is an exact
+    # rewriting of the hidden layer as n_inputs channels on the hidden register
+    # (`_hidden_layer_factors`).  One-qubit marginals cannot see wrong coherences or
+    # correlations (a Bell state and its dephased mixture share them), so the FULL 16 × 16
+    # hidden-register density matrix is compared, entry by entry, with the reference backend's
+    # partial trace over the 12 input qubits, on the real 12 → 4 geometry, at the training
+    # initialisation (±0.7) and at ±π.
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    params = net.random_params(np.random.default_rng(11), scale=scale)
+    codes = np.unique(iris_data.load_split(seed=0, ambiguous="drop").train_codes)[::3]
+    _, (w_out, b_out) = net.unpack(params)
+    a = b_out + iris_train._hidden_bit_table(net.n_hidden) @ w_out  # output angle per config h
+    kickback = np.cos((a[:, None] - a[None, :]) / 2.0)
+    max_correlation = 0.0
+    for code in codes:
+        fast = iris_train.hidden_register_state(net, params, int(code))
+        assert fast.shape == (16, 16)
+        np.testing.assert_allclose(fast, fast.conj().T, atol=1e-14)
+        assert np.trace(fast).real == pytest.approx(1.0, abs=1e-12)
+        assert np.linalg.eigvalsh(fast).min() > -1e-12
+        np.testing.assert_allclose(
+            fast, _reference_hidden_state(net, params, int(code), False), atol=1e-12
+        )
+        # the test is not vacuous: the state carries coherences a dephased route would lose
+        assert np.abs(fast - np.diag(np.diag(fast))).max() > 1e-2
+        # The full network: the output neuron uses the hidden qubits as controls only
+        # [PTQNN Fig 4], so on the hidden register it is the Schur-product channel
+        # ρ_hk ↦ ρ_hk·⟨o_k|o_h⟩ with |o_h⟩ = RX(a_h)|0⟩, ⟨o_k|o_h⟩ = cos((a_h − a_k)/2).
+        np.testing.assert_allclose(
+            fast * kickback, _reference_hidden_state(net, params, int(code), True), atol=1e-12
+        )
+        # distance to the product of the four one-qubit marginals — nonzero means correlations
+        t = fast.reshape((2,) * 8)
+        product = np.ones((1, 1), dtype=np.complex128)
+        for j in range(4):
+            # axes (row_0..row_3, col_0..col_3); tie row_k = col_k for k ≠ j → one-qubit state
+            idx = list(range(8))
+            for k in range(4):
+                if k != j:
+                    idx[4 + k] = idx[k]
+            product = np.kron(product, np.einsum(t, idx, [j, 4 + j]))
+        max_correlation = max(max_correlation, float(np.abs(fast - product).max()))
+    if hidden == "prototype":
+        # the prototype sandwich entangles input and hidden qubits and so correlates the
+        # hidden qubits with each other; the classic layer leaves them in a product state
+        assert max_correlation > 1e-3
+    else:
+        assert max_correlation < 1e-12
+
+
 def test_prototype_with_zero_prototype_angles_fires_on_the_hamming_weight_only() -> None:
     # [PTQNN Fig 2] with φ = 0 the RX(φ)/RX(−φ) sandwich is the identity, so a basis input |c⟩
     # simply triggers one CRX(θ) per 1-bit and all of them are X-rotations of the same hidden
@@ -476,14 +604,39 @@ def test_prototype_placement_reports_all_dead_instead_of_raising(
 
 
 @pytest.mark.parametrize("hidden", ["prototype", "classic"])
-def test_firing_placement_z_scores_the_trained_layer_against_a_random_null(hidden: str) -> None:
+def test_a_decoupled_layer_is_all_dead(hidden: str, split: iris_data.IrisSplit) -> None:
+    # Review 004 M5: with every drive exactly 0 the strongest drive is 0 too, and the strict
+    # relative rule `drive < 0.1·0` flagged nothing — an exactly decoupled layer passed as alive.
+    net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
+    zero = np.zeros(net.n_params)
+    np.testing.assert_array_equal(iris_train.output_drive(net, zero), 0.0)
+    assert iris_train.dead_hidden_neurons(net, zero).all()
+    # a live hidden layer whose output weights are all 0 is just as decoupled from the output
+    hidden_part, _ = net.unpack(net.random_params(np.random.default_rng(0), scale=0.7))
+    cut = net.pack(hidden_part, (np.zeros(4), 0.3))
+    assert iris_train.dead_hidden_neurons(net, cut).all()
+    score = iris_train.prototype_placement(net, zero, split.train_codes, n_draws=50, seed=0)
+    assert score.all_dead is True and score.n_dead == 4
+
+
+def test_firing_null_defaults_meet_the_1000_sample_rule(script: ModuleType) -> None:
+    # Review 004 M6 / CLAUDE.md: statistical statements rest on ≥ 1000 samples.
+    default = inspect.signature(iris_train.firing_placement).parameters["n_draws"].default
+    assert default >= 1000
+    assert script.build_parser().parse_args([]).firing_draws >= 1000
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_firing_placement_null_describes_the_initialisation(hidden: str) -> None:
     split = iris_data.load_split(seed=0, ambiguous="drop")
+    uniq = np.unique(split.train_codes)
     net = Network(n_inputs=12, n_hidden=4, hidden=hidden)  # type: ignore[arg-type]
     params = net.random_params(np.random.default_rng(7), scale=0.7)
-    score = iris_train.firing_placement(net, params, split.train_codes, n_draws=50, seed=0)
+    n = 1000
+    score = iris_train.firing_placement(net, params, split.train_codes, n_draws=n, seed=0)
     assert 0.0 <= score.coverage <= 1.0 and 0.0 <= score.selectivity <= 1.0
-    assert score.n_draws == 50 and score.n_hidden == 4
-    assert score.n_codes == int(np.unique(split.train_codes).size)
+    assert score.n_draws == n and score.n_hidden == 4
+    assert score.n_codes == int(uniq.size)
     assert score.coverage_null_std > 0.0 and score.selectivity_null_std > 0.0
     # the z-scores are exactly the standardised summaries, not a re-derivation
     assert score.coverage == pytest.approx(
@@ -492,28 +645,47 @@ def test_firing_placement_z_scores_the_trained_layer_against_a_random_null(hidde
     assert score.selectivity == pytest.approx(
         score.selectivity_null + score.rho_f_selectivity * score.selectivity_null_std
     )
-    # the null is the initialisation itself, so a draw from it scores ≈ 0 rather than ≫ 0
-    drawn = net.random_params(np.random.default_rng(0), scale=0.7)
-    typical = iris_train.firing_placement(net, drawn, split.train_codes, n_draws=50, seed=0)
-    assert abs(typical.rho_f) < 5.0
+    # Calibration of the null (≥ 1000 samples, stated tolerance).  n FRESH layers from the same
+    # initialisation, independent seed, are z-scored against the stored null; if its mean and
+    # std describe the initialisation the z-scores have mean 0 and std 1.
+    #   mean: SE 1/√n from the fresh sample plus 1/√n from the null's own mean, combined
+    #         √(2/n) = 0.045 at n = 1000; tolerance 4 combined SE.
+    #   std:  a sample std has SE ≈ √((κ − 1)/(4n)) with κ the kurtosis (measured on the fresh
+    #         sample); two such estimates enter the ratio, tolerance 4·√2·SE.
+    rng = np.random.default_rng(12345)
+    fresh = np.array(
+        [
+            iris_train.coverage_selectivity(
+                iris_train.firing_matrix(net, net.random_params(rng, scale=0.7), uniq)
+            )
+            for _ in range(n)
+        ]
+    )
+    for col, mu, sigma in (
+        (0, score.coverage_null, score.coverage_null_std),
+        (1, score.selectivity_null, score.selectivity_null_std),
+    ):
+        z = (fresh[:, col] - mu) / sigma
+        kurtosis = float(np.mean((z - z.mean()) ** 4) / z.var() ** 2)
+        se_std = np.sqrt((kurtosis - 1.0) / (4.0 * n))
+        assert abs(float(z.mean())) < 4.0 * np.sqrt(2.0 / n)
+        assert abs(float(z.std()) - 1.0) < 4.0 * np.sqrt(2.0) * se_std
     with pytest.raises(ValueError, match="n_draws"):
         iris_train.firing_placement(net, params, split.train_codes, n_draws=0)
 
 
-def test_rescore_writes_results_without_retraining(tmp_path: Path) -> None:
-    # --rescore must reach results-rescore.json from params-*.npy alone: the run that crashed
-    # after training had neither results.json nor meta.json.
-    script = Path(__file__).resolve().parents[1] / "experiments" / "iris_fig7_fig8_fig9.py"
-    spec = importlib.util.spec_from_file_location("iris_fig7_fig8_fig9", script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["iris_fig7_fig8_fig9"] = module
-    spec.loader.exec_module(module)
+def _save_random_params(run: Path, n_hidden: int = 4) -> None:
     rng = np.random.default_rng(0)
     for kind in ("classic", "prototype"):
-        net = Network(n_inputs=12, n_hidden=4, hidden=kind)  # type: ignore[arg-type]
-        np.save(tmp_path / f"params-{kind}.npy", net.random_params(rng, scale=0.7))
-    rc = module.main(
+        net = Network(n_inputs=12, n_hidden=n_hidden, hidden=kind)  # type: ignore[arg-type]
+        np.save(run / f"params-{kind}.npy", net.random_params(rng, scale=0.7))
+
+
+def test_rescore_writes_results_without_retraining(script: ModuleType, tmp_path: Path) -> None:
+    # --rescore must reach results-rescore.json from params-*.npy alone: the run that crashed
+    # after training had neither results.json nor meta.json.
+    _save_random_params(tmp_path)
+    rc = script.main(
         [
             "--rescore",
             str(tmp_path),
@@ -535,12 +707,29 @@ def test_rescore_writes_results_without_retraining(tmp_path: Path) -> None:
         f"{k}-{e}" for k in ("classic", "prototype") for e in ("inverse", "direct")
     }
     assert set(results["firing"]) == {"classic", "prototype"}
+    split = iris_data.load_split(seed=0, ambiguous="drop")
     for kind in ("classic", "prototype"):
-        assert 0.0 <= results["accuracy"][kind]["test"] <= 1.0
+        acc = results["accuracy"][kind]
+        # review 004 M3: the policy's test set AND the unfiltered held-out set, both reported
+        for key in ("test", "test_per_sample", "test_unfiltered", "test_per_sample_unfiltered"):
+            assert 0.0 <= acc[key] <= 1.0
+        assert acc["n_test"] == split.test_codes.size
+        assert acc["n_test_unfiltered"] == split.test_codes_all.size > acc["n_test"]
         assert "error" not in results["firing"][kind]
         assert results["firing"][kind]["n_draws"] == 3
     assert meta["flags"]["ambiguous"] == "drop" and meta["n_hidden_from_params"] == 4
     assert meta["git_hash"] and meta["split"]["ambiguous"] == "drop"
+    # review 004 M7: no meta.json here, so every split parameter came from the command line
+    # (or its default), and the file says so; plus the machine and the wall time
+    assert meta["source_meta"] is None
+    assert meta["sources"] == {
+        "seed": "cli",
+        "train_size": "default",
+        "ambiguous": "cli",
+        "init_scale": "default",
+    }
+    assert meta["hostname"] and meta["platform"] and meta["cpu_count"] >= 1
+    assert meta["wall_seconds"] > 0.0
     # nothing was retrained: the parameter files are untouched and no new params appeared
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "meta-rescore.json",
@@ -548,3 +737,88 @@ def test_rescore_writes_results_without_retraining(tmp_path: Path) -> None:
         "params-prototype.npy",
         "results-rescore.json",
     ]
+
+
+def test_rescore_reads_the_original_meta_and_refuses_a_contradicting_flag(
+    script: ModuleType, tmp_path: Path
+) -> None:
+    # Review 004 M7: with a training meta.json the split is rebuilt from IT, not from whatever
+    # the caller remembers; a flag that contradicts it aborts before anything is written.
+    _save_random_params(tmp_path)
+    cfg = iris_train.IrisConfig(n_hidden=4, init_scale=0.5)
+    original = {
+        "experiment": "iris_fig7_fig8_fig9",
+        "git_hash": "0123abc",
+        "seed": 2,
+        "config": {"iterations": cfg.iterations, "n_hidden": 4, "init_scale": 0.5},
+        "split": {"train_size": 1.0 / 3.0, "ambiguous": "drop"},
+    }
+    (tmp_path / "meta.json").write_text(json.dumps(original))
+    draws = ["--placement-draws", "20", "--firing-draws", "2"]
+    for flag, value in (
+        ("--ambiguous", "merge"),
+        ("--seed", "0"),
+        ("--train-size", "0.5"),
+        ("--init-scale", "0.7"),
+    ):
+        with pytest.raises(SystemExit, match=flag.lstrip("-").replace("-", "_")):
+            script.main(["--rescore", str(tmp_path), flag, value, *draws])
+        assert not (tmp_path / "results-rescore.json").exists()
+        assert not (tmp_path / "meta-rescore.json").exists()
+    # an agreeing flag is fine; everything else is read back from meta.json
+    assert script.main(["--rescore", str(tmp_path), "--seed", "2", *draws]) == 0
+    meta = json.loads((tmp_path / "meta-rescore.json").read_text())
+    assert meta["flags"]["seed"] == 2 and meta["flags"]["ambiguous"] == "drop"
+    assert meta["flags"]["init_scale"] == 0.5
+    assert meta["split"]["ambiguous"] == "drop" and meta["split"]["seed"] == 2
+    assert meta["sources"] == dict.fromkeys(
+        ("seed", "train_size", "ambiguous", "init_scale"), "meta.json"
+    )
+    assert meta["cli"]["seed"] == 2 and meta["cli"]["ambiguous"] is None
+    assert meta["source_meta"] == {"path": str(tmp_path / "meta.json"), "git_hash": "0123abc"}
+    results = json.loads((tmp_path / "results-rescore.json").read_text())
+    assert results["firing"]["prototype"]["init_scale"] == 0.5
+
+
+@pytest.mark.parametrize("failing", ["evaluate_kind", "score_placement"])
+def test_fresh_run_saves_training_and_provenance_before_any_scoring(
+    script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing: str
+) -> None:
+    # Review 004 M7 / blocker 3: a fresh run records the machine, the code and a monotonic wall
+    # time, and nothing that merely DESCRIBES a trained model (accuracy, placement, figures) can
+    # lose the trained parameters or the training metadata.  A 12 → 1 net, one sweep, serial.
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("scorer exploded")
+
+    monkeypatch.setattr(script, failing, boom)
+    out = tmp_path / "run"
+    argv = ["--seed", "1", "--iterations", "1", "--n-hidden", "1", "--processes", "1"]
+    with pytest.raises(RuntimeError, match="scorer exploded"):
+        script.main([*argv, "--out", str(out)])
+    names = {p.name for p in out.iterdir()}
+    assert {"params-classic.npy", "params-prototype.npy", "losses.json", "meta.json"} <= names
+    meta = json.loads((out / "meta.json").read_text())
+    assert meta["seed"] == 1 and meta["processes"] == 1
+    assert meta["hostname"] and meta["platform"] and meta["cpu_count"] >= 1
+    assert meta["git_hash"] and meta["wall_seconds_training"] > 0.0
+    assert meta["threads"]["OMP_NUM_THREADS"] is not None
+    if failing == "score_placement":
+        results = json.loads((out / "results.json").read_text())
+        for kind in ("classic", "prototype"):
+            assert {"test", "test_unfiltered"} <= set(results["accuracy"][kind])
+            assert meta["accuracy"][kind] == results["accuracy"][kind]
+    else:
+        assert "results.json" not in names
+
+
+def test_concurrent_runs_get_distinct_run_dirs(script: ModuleType, tmp_path: Path) -> None:
+    # A ≥ 20-seed sweep starts many runs in the same second: the directory name carries the
+    # seed and the policy, and a residual collision is resolved atomically, never shared.
+    stamp = "20260925T120000Z"
+    pairs = [(0, "merge"), (1, "merge"), (0, "drop"), (1, "drop"), (0, "drop")]
+    dirs = [script.make_run_dir(tmp_path, seed, amb, stamp=stamp) for seed, amb in pairs]
+    assert all(d.is_dir() and d.parent == tmp_path for d in dirs)
+    assert len({d.name for d in dirs}) == len(dirs)
+    assert dirs[0].name == f"{stamp}-seed0-merge"
+    assert dirs[3].name == f"{stamp}-seed1-drop"
+    assert dirs[4].name.startswith(f"{stamp}-seed0-drop-")
