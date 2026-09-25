@@ -1,3 +1,49 @@
+# Session 5 — 2026-09-25 — workstation round: review-004 fixes, laptop runs regenerated, Iris 20-seed sweep, ECG full trace
+
+## HANDOFF — state at session close
+Workstation (64 cores, RTX 3090, orkan). Review 004 closed; every laptop run regenerated here from
+clean commits and bit-identical where it overlaps; HANDOFF queue items 1–3 of session 4 done. Fig 9
+scored over 20 seeds × 2 policies against a pre-registered criterion: not reproduced. New Iris
+read-out finding (set-refitted scale). Main report and Overleaf updated; Codex review 005 pending.
+
+## What was done
+- Mailed ECG `.mat` files recovered from Thunderbird (Windows profile, uni-hannover INBOX,
+  Rosenhahn 2026-08-21) into `data/raw/ecg-rosenhahn/`; SHA256 match the pinned digests.
+- Review-004 code fixes by two Opus subagents on disjoint files (bit-count/KW–SA/ECG/figures;
+  Iris), each red→green; re-tested and committed here (`a2dd8da`, `4915fa2`). Found en route:
+  `ecg_table1.py` set `OMP_NUM_THREADS` after numpy import (48 × 64 BLAS threads, load 180) →
+  `6c8857f` with a pinning test. Stale "three circuit evaluations" in two captions fixed.
+- Runs (all from detached worktrees at the named commit): `bitcount/20260925T153548Z` (E2, 6 seeds,
+  44 min; seeds 0–3 = laptop bit for bit; superposition series = August run bit for bit),
+  `ecg/20260925T153739Z-mailed1800` (77 min on 48 procs; = laptop in every cell),
+  `ecg/20260925T165741Z-mailedfull` (39 min on 24 procs), Iris sweep `iris/20260925T*-seed*-*`
+  (40 runs, 20 at a time × 2 procs, ≈30 min each).
+- `experiments/iris_sweep_summary.py` (+ tests): pre-registered verdict rules, both accuracies,
+  Fig 7 contrast; `--calibrated` adds `iris.model.calibrated_accuracy` (scale fitted on the
+  training codes). Summary `iris_sweep/20260925T173530Z`.
+- Report: Fig 6 regenerated (both panels, one six-seed run); §4 bit-count, Iris ("Fig. 9,
+  scored", "Ambiguous codes, and how labels are read out"), ECG (full-trace row); scoreboard,
+  learnings (new item 9), assumptions, provenance, compute paragraph. Overleaf mirrored by an Opus
+  subagent. STATE, reply draft, review-004 resolution table, experiments/README pinned runs.
+
+## Verification
+- `sh scripts/check-all.sh` (see close entry below for the final run). Main report builds, 32 pp,
+  0 undefined references, no new overfull boxes.
+- Every new number re-derived from run files in this session: E2 crossings (12k/23k/62k/73k),
+  ECG tables (stdout.log/results.json), sweep summary.json. Seed-18 anomaly traced: set-refitted
+  and per-sample set-refitted read-outs agree on all 80 model×run cells; only the scale-fit set
+  matters.
+
+## Gotchas for future agents
+- `uv sync --group dev` without `--all-extras` uninstalls qiskit/cupy (20 tests then skip).
+- `pytest` without `-m "not slow"` runs the slow ECG tests on every core.
+- Thread caps must precede `import numpy` in pool scripts.
+- The set-refitted Iris accuracy (`accuracy`, `test` in results.json) is transductive; quote
+  `calibrated_accuracy` as the held-out number.
+- Prototype-3 ECG scores below prototype-2 on both windows: suspect optimisation budget first.
+
+# (earlier: session 4)
+
 # Session 4 — 2026-09-18 — inbox round: co-author's asks, real ECG, iterative baseline recast, Iris policy + placement metric, Overleaf drop-in
 
 ## HANDOFF — state at session close

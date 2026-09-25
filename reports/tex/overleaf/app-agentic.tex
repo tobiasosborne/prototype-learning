@@ -24,9 +24,11 @@ stamp (e.g.\ \run{bitcount\_noise/20260820T145335Z}) and quoted throughout.  Ope
 listed in \cref{app:assumptions}, calibration provenance in \cref{app:provenance}.  Two
 machines were used and every run directory records which: the August 2026 runs --- the
 reproduction, the noise study and the hardware plan --- on one workstation (64 cores, one
-RTX~3090), and the September 2026 reruns (\run{bitcount/20260918T111515Z},
-\run{ecg/20260918T132924}, \run{iris/20260918T085641Z-drop}) on a 12-thread laptop with no GPU,
-whose wall times are quoted with the number of cores used.  No run was allowed to exceed about
+RTX~3090); three reruns of 18 September 2026 (\run{bitcount/20260918T111515Z},
+\run{ecg/20260918T132924}, \run{iris/20260918T085641Z-drop}) on a 12-thread laptop with no GPU;
+and the runs of 25 September (\code{20260925}) on the workstation again, from clean commits,
+reproducing every laptop number they overlap bit for bit.  Wall times are quoted with the
+number of cores actually used.  No run was allowed to exceed about
 two hours; noise-aware training of the 11-qubit bit-count network ($\approx13$~h for its grid)
 and the full ECG/Iris noise grid ($\approx8$~h) were therefore not run, and are reported as not
 run rather than approximated.
@@ -112,10 +114,10 @@ matches that target with the inputs in equal superposition of all 32 strings.
 
 \Cref{fig:agentic-histograms} gives $\KL=5.5\times10^{-4}$; the submission's own printed model
 histogram, read off the figure, has $\KL\approx2.6\times10^{-3}$ against the same target.  In
-\cref{fig:agentic-convergence} (left) the median of four optimiser seeds crosses $\KL=0.005$ at
-sweep~9 and three of four are below $10^{-3}$ at sweep~20, one stalling at $0.014$
-(\run{bitcount/20260918T111515Z}; the six-seed run \run{bitcount/20260820T135930Z} gives
-five of six).  The
+\cref{fig:agentic-convergence} (left) the median of six optimiser seeds crosses $\KL=0.005$ at
+sweep~9 and five of six are below $10^{-3}$ at sweep~20, one stalling at $0.014$
+(\run{bitcount/20260925T153548Z}, whose superposition series are bit for bit those of
+\run{bitcount/20260820T135930Z}).  The
 published ``$\approx0$ in about 8 iterations'' does not define an iteration; against these
 sweeps it matches.
 
@@ -132,7 +134,7 @@ does not restore the input register --- the un-computation acts on a control qub
 $\CRX$ has already entangled with the hidden qubit --- so
 $P(\text{inputs}=x,\ \mathrm{out}=1)\neq
 2^{-n_{\mathrm{in}}}\,P(\mathrm{out}=1\mid\text{inputs}=x)$.  Measured on the archived run
-\run{bitcount/20260918T111515Z}: the networks trained on the per-input activations reach a
+\run{bitcount/20260925T153548Z}: the networks trained on the per-input activations reach a
 per-input $\KL$ below $10^{-3}$ while their superposition $\KL$, recorded alongside, never falls
 below $0.035$ (\cref{fig:agentic-convergence}, dashed).  The two observables are not
 interchangeable.
@@ -151,15 +153,17 @@ evaluations (two probes, the step, the re-scored incumbent), against the 36-coor
 of 109 evaluations used before --- the hint to use
 ``1000 times more iterations'' is consistent: $120\times1000\approx10^5$ steps.  That reading
 is an assumption and is the discrepancy that survives here.  Over $10^5$ elementary steps on
-four seeds, with the per-input $\KL$ monitored every $1\,000$ steps
-(\cref{fig:agentic-convergence}, right; run \run{bitcount/20260918T111515Z}), seeds 3, 2 and 1
-fall below $10^{-3}$ at $12\,000$, $23\,000$ and $73\,000$ steps and end at $1.1\times10^{-3}$,
-$4.4\times10^{-4}$ and $8.9\times10^{-3}$ (minima $4.9\times10^{-4}$, $3.1\times10^{-4}$,
-$9.5\times10^{-4}$), while seed 0 plateaus at $0.02$--$0.03$ (minimum $1.7\times10^{-2}$); the
-published endpoint is $\approx10^{-3}$.  The superposition $\KL$ of these same networks never
-falls below $0.035$ over the run (range $0.035$--$0.58$, endpoints $0.07$--$0.4$) --- precisely
-the old ``stall''.  The run costs 83 minutes
-on four laptop cores, $16.7$~ms per elementary iteration uncontended.
+six seeds, with the per-input $\KL$ monitored every $1\,000$ steps
+(\cref{fig:agentic-convergence}, right; run \run{bitcount/20260925T153548Z}), seeds 3, 2, 4
+and 1 fall below $10^{-3}$ at $12\,000$, $23\,000$, $62\,000$ and $73\,000$ steps and end at
+$1.1\times10^{-3}$, $4.4\times10^{-4}$, $7.2\times10^{-4}$ and $8.9\times10^{-3}$ (minima
+$4.9\times10^{-4}$, $3.1\times10^{-4}$, $3.7\times10^{-4}$, $9.5\times10^{-4}$); seed 5 comes
+close (minimum $1.4\times10^{-3}$, final $2.4\times10^{-3}$) and seed 0 plateaus at
+$0.02$--$0.03$ (minimum $1.7\times10^{-2}$); the published endpoint is $\approx10^{-3}$.  The
+superposition $\KL$ of these same networks never falls below $0.035$ over the run (range
+$0.035$--$0.58$, endpoints $0.07$--$0.53$) --- precisely the old ``stall''.  The run took 44
+minutes on six workstation cores, one seed per core; seeds 0--3 reproduce the earlier
+four-seed laptop run \run{bitcount/20260918T111515Z} bit for bit.
 
 \begin{figure}[tb]
 \centering
@@ -176,9 +180,9 @@ on four laptop cores, $16.7$~ms per elementary iteration uncontended.
 \caption{Left: superposition training, $\KL$ of \cref{eq:agentic-model} per sweep, six
 optimiser seeds and their median.  Right: the iterative baseline in its own observable --- the
 $\KL$ over the 32 per-input activations against the elementary iteration count (one coordinate,
-one input, four objective evaluations), four seeds; dashed, the superposition $\KL$ of the same
-networks, which does not follow it.  Runs \run{bitcount/20260820T135930Z} (left) and
-\run{bitcount/20260918T111515Z} (right).}
+one input, four objective evaluations), six seeds; dashed, the superposition $\KL$ of the same
+networks, which does not follow it.  Run \run{bitcount/20260925T153548Z} (both panels, six
+seeds; its superposition series are bit for bit those of \run{bitcount/20260820T135930Z}).}
 \label{fig:agentic-convergence}
 \end{figure}
 
@@ -201,9 +205,54 @@ within a few sweeps while its test loss bottoms out early and stays at $0.03$--$
 memorises --- whereas the prototype network descends more slowly on both and its test loss is
 still falling at sweep~40.  Prototype test accuracy is $95\,\%$, $91\,\%$ and $98\,\%$ on the
 three splits against the published $\approx98\,\%$; the encoding caps accuracy at $97\,\%$,
-$99\,\%$ and $99\,\%$, since two flowers of different species can share a 12-bit code.  The
-t-SNE picture of \cref{fig:tsne} does not reproduce: in this embedding both weight sets cluster
-away from the data, and what was plotted is not recoverable from the text.
+$99\,\%$ and $99\,\%$, since two flowers of different species can share a 12-bit code.
+
+\paragraph{The weight picture, scored.}
+\Cref{fig:tsne} is a two-dimensional (t-SNE) embedding in which the prototype weights are said
+to ``span the data''.  The reimplementation's embedding does not show it --- both weight sets
+cluster away from the data --- and a t-SNE picture cannot be scored, so it was replaced by two
+measurements, with the pass criterion fixed before the seeds were run.  The first reads what
+the hidden neurons \emph{do}: from the probability $P_j(c)$ that neuron $j$ fires on training
+code $c$ it forms the \emph{coverage} $\mathrm{mean}_c \max_j P_j(c)$ (every code has a neuron
+that fires on it) and the \emph{selectivity}
+$\mathrm{mean}_j\,[\max_c P_j(c) - \mathrm{mean}_c P_j(c)]$ (each neuron fires on some codes far
+more than on the rest), each expressed as a $z$-score against 1\,000 untrained layers drawn from
+the initialisation.  The second reads the angles: it decodes each neuron's preferred 12-bit
+pattern and measures how well the patterns cover the training codes, as $\rho = 0$ for random
+patterns and $\rho = 1$ for the best possible choice.  The figure counts as reproduced if, over
+20 seeds, the prototype layer is positive on both firing scores and beats the classic layer on
+both (paired one-sided Wilcoxon test, $p < 0.01$), and, for the angles, if its median $\rho$ is
+at least $0.5$.
+
+Over 20 seeds and both treatments of ambiguous codes (below), i.e.\ 40 training runs summarised
+in \run{iris\_sweep/20260925T173530Z}, the prototype layer has the selectivity and not the
+coverage.  Its selectivity $z$ has median $+18.0$ against $+1.8$ for the classic layer
+($p < 10^{-5}$ under both policies); its coverage $z$ has median $+0.6$ against $+2.2$, i.e.\
+the classic neurons fire on more of the data.  The angle score is zero within error for both
+networks (medians $-0.07$ to $+0.14$, the bootstrap interval of every prototype median
+containing $0$).  Trained prototype neurons are specialised detectors, but they do not tile the
+data better than classic neurons, and their angles do not read as data patterns under either
+angle-to-bit convention.  \Cref{fig:tsne} is recorded as not reproduced.  The same sweep
+confirms the overfitting contrast of \cref{fig:agentic-iris-losses}: the classic network's test
+loss rises after its minimum on 8 of 20 seeds, the prototype's on 2.
+
+\paragraph{Ambiguous codes, and how labels are read out.}
+The original preprocessing removed the binary patterns assigned to two classes (e-mail of
+21 August 2026).  Under this ``drop'' policy the training \emph{and} test samples with such
+codes are removed, which conditions the test set on its own labels, so accuracy is quoted both
+on the filtered test set and on all 100 test flowers.  The sweep also exposed a fragility of the
+read-out.  Rounding ``each code's weight to the nearest label'' needs one overall scale, since
+the three class weights $1:4:9$ are known only up to a constant; fitted afresh on each evaluated
+set, it makes a flower's predicted label depend on which \emph{other} flowers are evaluated
+with it.  On one seed, removing three ambiguous test codes moved that scale by a whole class
+step and the prototype network's accuracy from $94\,\%$ (all 100 flowers) to $39\,\%$ (the 87
+kept).  Reading each flower from its own basis state instead of from the superposition changes
+nothing (the two read-outs agree on every run of the sweep); fitting the scale once on the
+training set removes the effect.  With that read-out,
+over 20 seeds, both networks reach $94\,\%$ on all test flowers (prototype $94.3 \pm 2.8$ and
+$94.1 \pm 2.6\,\%$ without and with dropping; classic $93.9 \pm 2.7$ and $94.5 \pm 2.4\,\%$) and
+$96.4\,\%$ on the filtered test set under dropping --- below the published $\approx 98\,\%$,
+with no accuracy advantage for either architecture.
 
 \paragraph{On the split.}
 The published histograms show 15 non-empty bars for the training set and 30 for the test set.
@@ -276,8 +325,9 @@ The recording behind the published Fig.~13 was then supplied by the authors (e-m
 not redistributed).  It arrives already noisy and clipped to $[0,1]$: over its first 1\,800
 samples --- the published window --- the measured noise standard deviation is $0.035$ and the
 input PSNR $27.0$~dB, against the $\sigma=0.02$ and $32.0$~dB assumed above.  Rerunning the
-identical protocol on it (\cref{tab:agentic-ecg}; run \run{ecg/20260918T132924}, six worker processes
-on the laptop) splits Table~I in two.  The one-neuron result reproduces, and more strongly
+identical protocol on it (\cref{tab:agentic-ecg}; run \run{ecg/20260925T153739Z-mailed1800},
+identical to the earlier laptop run \run{ecg/20260918T132924} in every cell) splits Table~I in
+two.  The one-neuron result reproduces, and more strongly
 than published: the prototype network gains $2.8$~dB over the classic one at one hidden neuron
 where the published table gains $0.2$~dB, and it lifts a $27.0$~dB input to $36.8$~dB, so the
 smallest prototype network already does most of the denoising.  The top of the table does not
@@ -291,14 +341,19 @@ tuned.  Three candidates remain: the noise level and the clipping of the supplie
 clipped to $[0,1]$ is not the additive-Gaussian model the loss assumes); the restart and
 selection protocol, which the text does not give and which here is 8 restarts per cell with the
 best taken by training MSE; and the train/test split, which the text does not give either and
-which here is first half against second.  The full $7\,700$-sample recording was not run.
+which here is first half against second.  The full $7\,700$-sample recording (input
+$27.5$~dB; run \run{ecg/20260925T165741Z-mailedfull}, 39 minutes on 24 workstation cores) rules
+out the window as a fourth: it gives the same shape --- prototype $37.75$, $37.82$ and
+$36.25$~dB, classic $34.90$, $37.72$ and $38.19$~dB, i.e.\ a $2.9$~dB prototype advantage at one
+neuron, a tie at two and the classic network ahead at three.
 
 \begin{table*}[t]
 \caption{Table~I recomputed on the authors' own recording (first 1\,800 samples, the published
-Fig.~13 window; noisy input $27.0$~dB).  PSNR in dB on the test half.  Whole-signal SSIM is
-$0.997$--$0.999$ and windowed SSIM $0.84$--$0.93$ in every cell, so neither is tabulated.  The
-memo row is the synthetic-signal result above, whose input is a cleaner $32.0$~dB and therefore
-not directly comparable.  Run \run{ecg/20260918T132924}.}
+Fig.~13 window, noisy input $27.0$~dB; and all $7\,700$ samples, input $27.5$~dB).  PSNR in dB
+on the test half.  Whole-signal SSIM is $0.997$--$0.999$ and windowed SSIM $0.84$--$0.93$ in
+every cell, so neither is tabulated.  The memo row is the synthetic-signal result above, whose
+input is a cleaner $32.0$~dB and therefore not directly comparable.  Runs
+\run{ecg/20260925T153739Z-mailed1800} and \run{ecg/20260925T165741Z-mailedfull}.}
 \label{tab:agentic-ecg}
 \begin{tabular}{@{}l ccc ccc@{}}
 \toprule
@@ -309,6 +364,7 @@ hidden neurons & 1 & 2 & 3 & 1 & 2 & 3 \\
 published Table~I & $32.72$ & $38.20$ & $39.65$ & $32.90$ & $40.00$ & $40.04$ \\
 reimplementation, same recording & $33.97$ & $36.33$ & $38.02$ & $36.80$ & $37.48$ & $36.86$ \\
 difference & $+1.25$ & $-1.87$ & $-1.63$ & $+3.90$ & $-2.52$ & $-3.18$ \\
+reimplementation, full recording & $34.90$ & $37.72$ & $38.19$ & $37.75$ & $37.82$ & $36.25$ \\
 \addlinespace
 memo: synthetic signal & --- & --- & --- & $37.4$ & $38.0$ & $38.1$ \\
 \bottomrule
@@ -718,13 +774,15 @@ sequential, $\delta_0 = 0.005$, cap $10\,000$ & 100 & 110 & 4.50 & 4358 \\
 \item \textbf{The central claims reproduce.}  Activation surface, bit-count histogram and
 convergence, Iris overfitting contrast, perfect Flappy play on a clone, ECG denoising within
 2~dB on a synthetic signal --- though on the authors' own recording only the one-neuron cell of
-Table~I reproduces, the two- and three-neuron prototype cells falling $2.5$--$3.2$~dB short
-(\cref{app:ecg}).  What does not: the weight picture of \cref{fig:tsne}, which is
-under-specified in the text.  The iterative baseline of \cref{fig:OptConv} was a second such
+Table~I reproduces, the two- and three-neuron prototype cells falling $2.5$--$3.2$~dB short ($2.2$--$3.8$~dB on the full recording)
+(\cref{app:ecg}).  What does not: the weight picture of \cref{fig:tsne} --- scored over 20
+seeds against a criterion fixed in advance, trained prototype neurons are far more selective
+than classic ones but do not cover the data better, and their angles do not decode to data
+patterns (\cref{app:iris}).  The iterative baseline of \cref{fig:OptConv} was a second such
 failure until it turned out to have been graded with the wrong quantity --- a scheme that trains
 one input at a time moves the per-input activations, not the superposition distribution of
 \cref{eq:agentic-model}, and the prototype block leaves the input register entangled with the
-hidden qubits --- and in its own observable it reaches $\approx10^{-3}$ on three seeds of four
+hidden qubits --- and in its own observable it reaches $\approx10^{-3}$ on four seeds of six
 (\cref{app:bitcount}).  Grade a scheme in the observable it optimises.
 
 \item \textbf{Reading figures is part of reproduction.}  The bit-count target
@@ -765,6 +823,12 @@ form, kept below that reward, does not.
 numbers: a state-preparation gate count off by a factor of two, a reversed inequality, costs
 computed by hand.  The fix was a script that emits every number and refuses to run if any
 calibration input lacks a source; this appendix quotes only that script.
+
+\item \textbf{A read-out calibrated on the evaluated set is not a held-out accuracy.}  The Iris
+labels are rounded after one overall scale is fitted; fitted on the test set itself, it let
+three removed test flowers change the predicted labels of most of the rest ($94\,\% \to 39\,\%$
+on one seed).  Only the 20-seed sweep exposed it; one seed would not have.  Calibrate on the
+training data, and state the pass criterion before running the seeds.
 \end{enumerate}
 
 
@@ -779,6 +843,14 @@ cooling; one iteration is a coordinate sweep.  Bit-count: $a_0=20$, $c_0=0.2$, $
 cooling $0.7$, 20 sweeps.  Flappy: $a_0=0.4$, $c_0=0.25$, $T_0=0.05$, cooling $0.9$, 25 sweeps
 after 300 random restarts.  Iris: $a_0=2$, decay exponent $0.3$, $c_0=0.1$, 40 sweeps.  ECG:
 40 sweeps per restart, 8 restarts, best by training MSE.
+\item[Iris ambiguous codes.]  By default, samples sharing a 12-bit code are merged and their
+labels averaged.  The original preprocessing removed ``binary patterns which were assigned to
+two classes'' (e-mail, 2026-08-21); the reimplementation's drop policy does that on both splits
+after encoding, so the test accuracy under it is conditional on the pattern being unambiguous
+(seed 0: $97.6\,\%$ on the 82 surviving test samples against $95.0\,\%$ on all 100; over 20
+seeds $96.4\,\%$ against $94.1\,\%$ with the training-set read-out scale); both numbers are
+reported.  Which split was filtered, and whether before or after the $k$-means encoding, is not
+stated.
 \item[Iterative baseline.]  One \emph{elementary} Kiefer--Wolfowitz step per iteration --- one
 coordinate, one randomly chosen input, four objective evaluations --- on the squared error of
 that input's activation; only the KW step is offered to the Metropolis rule; fixed schedule
@@ -792,15 +864,24 @@ paper; $\theta=\pi s$ tested as an ablation.
 labels averaged; the KL is normalised over all 4\,096 input strings, since restricting it to
 the dataset's codes lets the network exploit interference between examples and reach a training
 loss of $10^{-5}$ while reading out at chance; label weight $\propto(\ell+1)^2$; labels
-predicted by nearest rounding of the read-out weight.
+predicted by nearest rounding of the read-out weight, after one overall scale (the class weights
+$1:4:9$ are known only up to a constant) is fitted by least squares in log space.  Fitted on the
+evaluated set, as in the submission's wording, the scale makes a flower's label depend on the
+other flowers in the set; fitted once on the training set it does not.  Both are reported; the
+second is the one quoted as a held-out accuracy.
+\item[Weight-picture criterion.]  The t-SNE picture of \cref{fig:tsne} is replaced by a
+firing-based coverage and selectivity score ($z$-scores against 1\,000 untrained layers from the
+initialisation) and an angle-based covering score $\rho$; the pass criterion (20 seeds, both
+firing scores positive and above the classic layer's at $p<0.01$, median $\rho\ge 0.5$) was
+fixed before the seeds were run.
 \item[Flappy.]  Clean-room clone: $288\times512$ screen, flap impulse $-7$, gap 120, pipe
 spacing 180, gravity 1; reward 0.01 per frame plus 1 per pipe; tracking term
 $|{\rm height}-{\rm gap}|$ with weight 1; 5 training episodes of 1\,500 frames, 20 held-out
 seeds 5--24, 5\,000-frame cap (110 pipes); decisions cached on a $65\times65$ grid.
 \item[ECG.]  Three signals: a synthetic McSharry-form signal tuned to the published trace with
 Gaussian noise $\sigma=0.02$; MIT-BIH record 100; and the authors' own recording, of which the
-first 1\,800 samples --- the published window --- are used, the full 7\,700 exceeding the
-compute ceiling.  On that recording the noise is the recording's own ($\sigma=0.035$, input
+first 1\,800 samples --- the published window --- are used, with the full 7\,700 as a
+check.  On that recording the noise is the recording's own ($\sigma=0.035$, input
 $27.0$~dB) and not a choice.  Assumed for all three: mirror-padded edges; first half train,
 second half test; 8 optimiser restarts per cell with the best taken by training MSE; PSNR with
 $R$ the range of the clean signal; SSIM both whole-signal and in a 7-sample sliding window.
@@ -867,5 +948,5 @@ repository at \repourl.
 One experimental input is not calibration data: the ECG recording of \cref{app:ecg}, supplied by
 the authors by e-mail on 21 August 2026 as two MATLAB files.  It is the authors' data and is not
 redistributed; instead the loader writes the SHA256 digest of each file into the \code{meta.json}
-of every run that uses it, so run \run{ecg/20260918T132924} identifies the input exactly without
-carrying it.
+of every run that uses it, so runs \run{ecg/20260918T132924}, \run{ecg/20260925T153739Z-mailed1800} and
+\run{ecg/20260925T165741Z-mailedfull} identify the input exactly without carrying it.

@@ -24,6 +24,7 @@ regenerate if they are lost.
 | `hardware_compile_table.py` | gate set × topology cost table → `reports/hardware-compile-table.md` | — | seconds |
 | `hardware_plan.py` | every number of `reports/hardware-plan.md` (`numbers.md`/`.json`), provenance join | — | ~2 min on GPU (`--no-sim` for seconds) |
 | `report_figures.py` | all 23 figures of `reports/tex/` as PDF + PNG from the pinned `RUNS` | — | ~1 min |
+| `iris_sweep_summary.py` | aggregates Iris seed-sweep run dirs into the pre-registered Fig 9 verdict, both accuracies, both read-outs (`--calibrated`), Fig 7 contrast | HANDOFF item 2 | ~25 s with `--calibrated` on 32 procs |
 
 All accept `--out` and a seed; `--help` lists the rest. GPU-capable scripts need
 `LD_LIBRARY_PATH=/usr/lib/wsl/lib` on WSL2 to see the RTX 3090.
@@ -43,6 +44,10 @@ All accept `--out` and a seed; `--help` lists the rest. GPU-capable scripts need
 | flappy_shots | `20260821T084601Z` (`20260821T075048Z` is the failed mean-hinge attempt, kept as evidence) | 2d88102 | noise.md "Shots", tex §7 |
 | hardware-compile-table | `20260820T155816Z` | 44c1e0b | hardware-compile-table.md |
 | hardware-plan | `20260821T084554Z` | 2d88102 | hardware-plan.md, tex §6 |
+| bitcount (E2, iterative baseline) | `20260925T153548Z` (6 seeds × 1e5 elementary steps; seeds 0–3 = laptop run `20260918T111515Z` bit for bit) | a2dd8da | tex §4 Fig 6 (both panels) |
+| ecg (mailed recording) | `20260925T153739Z-mailed1800` (= laptop `20260918T132924` in every cell), `20260925T165741Z-mailedfull` (7700 samples) | 6c8857f | tex §4 `tab:ecg-mailed` |
+| iris (sweep) | `20260925T*-seed{0..19}-{merge,drop}` (40 dirs; launcher/logs in `iris/sweep-4915fa2/`) | 4915fa2 | iris_sweep |
+| iris_sweep | `20260925T173530Z` (`--calibrated`) | a80ad50 | tex §4 Iris, STATE scoreboard |
 | codex | `NN-events.jsonl`, `NN-err.log` | — | raw Codex transcripts behind `reviews/` and `tests/oracle/` |
 
 ## Rules

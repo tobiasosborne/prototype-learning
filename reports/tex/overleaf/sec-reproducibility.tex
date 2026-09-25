@@ -31,23 +31,29 @@ Superposition training &
   median $<0.005$ at sweep 9; 5 of 6 seeds $<10^{-3}$ at sweep 20 & reproduced \\
 Iterative baseline &
   $\KL\approx 0$ by $\approx 120$ iterations &
-  per-input $\KL<10^{-3}$ for 3 of 4 seeds within $10^5$ elementary steps; the superposition
-  $\KL$ is a different observable & reproduced in the per-input observable; iteration unit
+  per-input $\KL<10^{-3}$ for 4 of 6 seeds within $10^5$ elementary steps (a fifth reaches
+  $1.4\times10^{-3}$); the superposition $\KL$ is a different observable & reproduced in the per-input observable; iteration unit
   assumed \\
 Iris learning curves &
   classic overfits, prototype does not &
-  classic test loss rises after 1--4 sweeps; the prototype's falls monotonically &
-  reproduced \\
+  classic test loss rises after 1--4 sweeps; the prototype's falls monotonically; over 20
+  seeds the classic test loss rises on 8, the prototype's on 2 & reproduced \\
 Iris accuracy & $\approx 98\,\%$ &
-  $95 / 91 / 98\,\%$ on three splits (encoding ceilings $97 / 99 / 99\,\%$) & in range \\
+  $95 / 91 / 98\,\%$ on three splits (encoding ceilings $97 / 99 / 99\,\%$); over 20 seeds
+  $94.3\pm2.8\,\%$ (classic $93.9\pm2.7\,\%$), $96.4\,\%$ on the filtered set when ambiguous
+  codes are dropped & $2$--$4$ points short; no architecture advantage \\
 Iris weight picture (t-SNE) & prototype weights span the data &
-  both weight sets cluster away from the data & discrepancy \\
+  t-SNE: both weight sets cluster away from the data.  Scored over 20 seeds: prototype neurons
+  far more selective than classic (median $z$ $+18$ vs $+1.8$), but cover the data less ($+0.6$
+  vs $+2.2$); angles do not decode to data patterns & discrepancy (criterion fixed in
+  advance) \\
 Flappy Bird & ``plays perfectly'' &
   $110/110$ pipes (the frame cap) on all 20 held-out game seeds & reproduced, own clone \\
 ECG PSNR, 1/2/3 hidden neurons & $32.9 / 40.00 / 40.04$~dB &
   $37.4 / 38.0 / 38.1$~dB on a synthetic signal of the same form; $36.8 / 37.5 / 36.9$~dB on the
-  authors' own recording & within $\approx 2$~dB on the synthetic signal; on the original
-  recording the 1-neuron cell reproduces, the 2- and 3-neuron cells fall $2.5$--$3$~dB short \\
+  authors' own recording ($37.8 / 37.8 / 36.3$~dB on all $7\,700$ samples) & within
+  $\approx 2$~dB on the synthetic signal; on the original recording the 1-neuron cell
+  reproduces, the 2- and 3-neuron cells fall $2$--$4$~dB short \\
 \bottomrule
 \end{tabularx}
 \end{table*}
@@ -71,20 +77,24 @@ agreement between backends is always checked on full output distributions, never
 output marginal alone.
 
 \Cref{tab:agentic-scoreboard} is the scoreboard.  Of the nine items that can be
-regenerated from the text of the submission, seven reproduce: the activation surface of the
+regenerated from the text of the submission, six reproduce: the activation surface of the
 prototype neuron, the bit-count target histogram and its convergence, the Iris overfitting
-contrast and its accuracy, perfect Flappy play on the agents' own clone of the game, and
-the ECG denoising table to within about 2~dB on a synthetic signal of the same form.  The
-last of these carries a qualification: rerun on our own recording, supplied to the agents later,
+contrast, perfect Flappy play on the agents' own clone of the game, and the ECG denoising
+table to within about 2~dB on a synthetic signal of the same form.  The Iris accuracy comes
+out $2$--$4$ points short of the published $\approx 98\,\%$, with no advantage of either
+architecture over 20 seeds.  The ECG table carries a qualification: rerun on our own recording, supplied to the agents later,
 only the one-neuron cell of Table~I reproduces --- and there the prototype advantage is larger
 than published ($2.8$~dB against $0.2$~dB) --- while the two- and three-neuron prototype cells
-fall $2.5$--$3.2$~dB short and the ordering at three neurons inverts (\cref{app:agentic}).  One
-does not: the weight picture of \cref{fig:tsne} does not come out at all, since in
-the agents' embedding both weight sets cluster away from the data.  It is recorded as a
-discrepancy rather than tuned away, and \cref{app:agentic} states what was tried.  The iterative baseline of \cref{fig:OptConv} was a second
+fall $2.5$--$3.2$~dB short and the ordering at three neurons inverts; the full
+$7\,700$-sample recording gives the same shape (\cref{app:ecg}).  One does not: the weight
+picture of \cref{fig:tsne}.  In the agents' embedding both weight sets cluster away from the
+data; scored instead over 20 seeds against a criterion fixed in advance, trained prototype
+neurons are far more selective than classic ones but do not cover the data better, and their
+angles do not decode to data patterns.  It is recorded as a discrepancy rather than tuned away,
+and \cref{app:iris} states what was tried.  The iterative baseline of \cref{fig:OptConv} was a second
 such failure until the agents found that they had been grading it with the superposition
 $\KL$ while the scheme trains the per-input activations; in its own observable it reaches
-$\approx10^{-3}$ on three seeds of four, and what remains assumed is the unit of the published
+$\approx10^{-3}$ on four seeds of six, and what remains assumed is the unit of the published
 ``iteration'' (\cref{app:agentic}).
 
 The agents then went beyond reproduction, and the appendix reports three extensions.  A

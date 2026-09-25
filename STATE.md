@@ -1,6 +1,6 @@
 # STATE — single source of truth
 
-Updated: 2026-09-18 (end of session 4)
+Updated: 2026-09-25 (end of session 5, workstation)
 
 ## Phase status (see PLAN.md §3)
 
@@ -20,7 +20,8 @@ Updated: 2026-09-18 (end of session 4)
 | P11 final report | **done** | `reports/tex/main.pdf` (28 pp, 23 figures from `experiments/report_figures.py`); reproduction.md, noise.md, hardware-plan.md |
 | Shot-noise programme | items 1–3 done (1 negative, 2 partial, 3 positive); 4–6 not started | `backends/shots.py`, `kwsa.probe_context`, `flappy.agent.SPRTDecision`, margin objective |
 | Review round 3 | closed: all 9 findings applied (reviews/003-session2.md resolution table) | |
-| Inbox round (session 4) | **done (laptop)**; Codex review 004 pending | real ECG source + Table I run, Iris drop policy + placement metrics (1 seed), iterative baseline recast (E2), `reports/tex/overleaf/` drop-in, reply draft; workstation items in HANDOFF |
+| Inbox round (session 4) | **done (laptop)**; review 004 closed in session 5 | real ECG source + Table I run, Iris drop policy + placement metrics, iterative baseline recast (E2), `reports/tex/overleaf/` drop-in, reply draft |
+| Workstation round (session 5) | **done** | review-004 code fixes; laptop runs regenerated from clean commits (bit-identical where they overlap); E2 six seeds; ECG full trace; Iris 20-seed × 2-policy sweep with pre-registered Fig 9 verdict; train-calibrated Iris read-out |
 | Docs round (session 3) | **done** | `README.md`, `docs/{architecture,backends,noise,training,tasks,hardware,testing}.md`, READMEs in `experiments/`, `reports/`, `reviews/`, `notes/`, `tests/`, `data/`, `literature/`; no code changed |
 
 ## Reproduction scoreboard (paper value → ours)
@@ -30,13 +31,13 @@ Updated: 2026-09-18 (end of session 4)
 | Fig 3 activation surface | (0,1)→max, (1,0)→0 | 1.000 / 0.000 / 0.5 / 0.5 | reproduced |
 | Fig 5 target | (popcount+1)/112 | confirmed on all 32 bars ±0.0002 | reproduced |
 | Fig 6 superposition KL | ≈0 in ~8 iters | median <0.005 at 9 sweeps; 5/6 seeds <1e-3 at 20 | reproduced (seed 2 stalls at 0.014) |
-| Fig 6 iterative KL | ≈0 (≈1e-3) by ~120 iters | per-input KL < 1e-3 at 12k / 23k / 73k single-coordinate KW steps (seeds 3/2/1); seed 0 plateaus at 0.02–0.03; the same networks have superposition KL 0.07–0.4 (run bitcount/20260918T111515Z) | reproduced in the per-input observable; the iteration unit is an assumption (the old 0.15 was the superposition KL of a per-input-trained net) |
-| Fig 7 Iris loss curves | prototype generalises | classic test KL rises, prototype monotone | reproduced |
-| Iris accuracy | ≈98 % | 95/91/98 % (ceilings 97/99/99 %) | in range |
-| Fig 9 Iris TSNE | weights span data | t-SNE not reproduced; replaced by placement metrics (covering cost ρ, firing coverage/selectivity z-scores; `iris/train.py`, `--rescore`). Seed 0, drop policy: prototype ρ +0.03 (inverse) / +0.29 (direct), classic −0.17; firing selectivity z +21 (prototype) vs +0.2 (classic), coverage z +0.65 vs +3.0; test acc 97.6 % both (run iris/20260918T085641Z-drop) | one seed; the ≥20-seed sweep (workstation) decides |
+| Fig 6 iterative KL | ≈0 (≈1e-3) by ~120 iters | per-input KL < 1e-3 at 12k / 23k / 62k / 73k single-coordinate KW steps (seeds 3/2/4/1); seed 5 min 1.4e-3; seed 0 plateaus at 0.02–0.03; the same networks have superposition KL 0.035–0.58, endpoints 0.07–0.53 (run bitcount/20260925T153548Z, 6 seeds) | reproduced in the per-input observable; the iteration unit is an assumption (the old 0.15 was the superposition KL of a per-input-trained net) |
+| Fig 7 Iris loss curves | prototype generalises | classic test KL rises, prototype monotone; 20 seeds: classic rises on 8 (merge) / 7 (drop), prototype on 2 / 0 | reproduced |
+| Iris accuracy | ≈98 % | 95/91/98 % on the 3 August splits; 20 seeds (train-calibrated read-out): prototype 94.3 ± 2.8 %, classic 93.9 ± 2.7 % (merge); drop: 96.4 % filtered / 94.1 % all (run iris_sweep/20260925T173530Z). Set-refitted read-out is fragile (seed 18 drop: 39 % filtered vs 94 % all) | 2–4 points short; no architecture advantage |
+| Fig 9 Iris TSNE | weights span data | t-SNE not reproduced; scored over 20 seeds × {merge, drop} with a pre-registered criterion: prototype firing selectivity z median +18 vs classic +1.3–1.8 (p < 1e-5), but coverage z +0.1–0.6 vs +1.9–2.2 (classic covers more); angle covering ρ ≈ 0 for both (all prototype CIs contain 0) (run iris_sweep/20260925T173530Z) | **discrepancy** |
 | Flappy Bird | perfect play | 110/110 pipes, 20/20 seeds | reproduced (own clone) |
 | Table I ECG PSNR (1/2/3 proto) | 32.9 / 40.00 / 40.04 | 37.4 / 38.0 / 38.1 (synthetic) | within ~2 dB |
-| Table I ECG PSNR on the co-author's original recording (first 1800 samples, input PSNR 27.0 dB, best of 8 restarts) | 32.9 / 40.00 / 40.04 (CQNN 32.7 / 38.2 / 39.65) | PTQNN 36.8 / 37.5 / 36.9; CQNN 34.0 / 36.3 / 38.0 (run ecg/20260918T132924) | 1-neuron advantage reproduced (larger than paper); 2/3-neuron cells 2.5–3 dB short, ordering at 3 flips — discrepancy; full 7700-sample run pending (workstation) |
+| Table I ECG PSNR on the co-author's original recording (input PSNR 27.0 dB first 1800 / 27.5 dB full 7700; best of 8 restarts) | 32.9 / 40.00 / 40.04 (CQNN 32.7 / 38.2 / 39.65) | 1800: PTQNN 36.8 / 37.5 / 36.9, CQNN 34.0 / 36.3 / 38.0 (ecg/20260925T153739Z-mailed1800 = laptop run exactly); 7700: PTQNN 37.75 / 37.82 / 36.25, CQNN 34.90 / 37.72 / 38.19 (ecg/20260925T165741Z-mailedfull) | 1-neuron advantage reproduced (larger than paper); 2/3-neuron cells 2–4 dB short, ordering at 3 flips — discrepancy, not the window |
 
 ## Shot-noise scoreboard (session 2)
 

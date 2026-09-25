@@ -104,3 +104,26 @@ Reject pending correction of the run accounting and report provenance. The centr
 | M8 | unarchived diagnostic numbers (0.05, 1.3 %, 0.03–0.09) | Text **fixed** (numbers removed, archived series cited); saving params per seed **open** (pi-06) |
 | M9 | Fig 6 caption vs generator | **open** (pi-06): generator still reads the August run for the left panel; the committed PNG is the September smoke-test version, captions describe the PNG |
 | m1–m3 | docstring sign, range validation, "full pass" wording | **open** (pi-06) |
+
+## Resolution, session 5 (2026-09-25, workstation) — all code findings closed
+
+Commits `a2dd8da` (B1–B3 code, M1, M2, m1–m3), `6c8857f` (found en route: `ecg_table1.py` capped
+BLAS threads only after numpy was imported, so 48 workers × 64 threads), `4915fa2` (M3 code, M4–M7),
+`0483be8` (M8/M9). Split between two Opus subagents by disjoint file sets; tests re-run by the main
+session before each commit.
+
+| # | Resolution |
+|---|---|
+| B1 | Figure footer "4 objective evaluations"; the Fig 6 caption and Overleaf still said "three circuit evaluations" in three places — fixed |
+| B2 | `bitcount_figs.py` records `final_kl` = last value and `best_kl` = minimum, saves final and best params per seed and scheme, host/platform/pool in meta. Regenerated as `bitcount/20260925T153548Z` (6 seeds); seeds 0–3 equal the laptop run bit for bit |
+| B3 | `perf_counter` everywhere, `hostname`/`platform`/`cpu_count`/`processes` in meta. Regenerated as `ecg/20260925T153739Z-mailed1800` (identical PSNR in every cell to the laptop run) |
+| M1 | dead per-basis model → zero vector → eps-floor penalty (test) |
+| M2 | `bitcount.monitor_x`; the plot and `report_figures` use it (tests) |
+| M3 | `IrisSplit.test_codes_all/test_labels_all`, indices filtered with the codes; both accuracies in results/printout/rescore. The 20-seed sweep then exposed a larger effect: the set-refitted read-out scale — see `iris.model.calibrated_labels` and report §4 Iris |
+| M4 | `iris.train.hidden_register_state`: full 16×16 hidden state pinned to the reference partial trace to 1e-12 (prototype and classic, non-product check) |
+| M5 | zero drive → all dead (test) |
+| M6 | `n_draws=1000` default; calibration test with 1000 draws and a stated tolerance |
+| M7 | `--rescore` reads meta.json and refuses contradicting flags; provenance recorded |
+| M8 | params saved per seed (B2), so the diagnostics can be recomputed |
+| M9 | both Fig 6 panels read the one six-seed run; its superposition series equal the August run's bit for bit |
+| m1–m3 | docstring sign; `n_coords`/`anneal_every`/`batch` validated; "nominal epoch" wording |

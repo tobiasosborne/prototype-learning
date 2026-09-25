@@ -5,16 +5,18 @@
 \item \textbf{The paper's central claims reproduce.}  The prototype neuron's activation surface,
 the bit-count histogram and its convergence, the Iris overfitting contrast, perfect Flappy play
 (on our clone) and the ECG denoising numbers (within 2~dB on a different signal) all come out of
-a clean-room implementation.  What does not: the weight picture of Fig.~9, which is
-under-specified in the paper, and --- once the paper's own ECG recording reached us and removed
+a clean-room implementation.  What does not: the weight picture of Fig.~9 --- scored over 20
+seeds against a criterion fixed in advance, trained prototype neurons are far more selective than
+classic ones but do not cover the data better, and their angles do not decode to data patterns
+(\cref{sec:iris}) --- and --- once the paper's own ECG recording reached us and removed
 the signal as an excuse --- the upper half of Table~I, where our two- and three-neuron prototype
-cells fall $2.5$--$3.2$~dB short while the one-neuron cell reproduces with a \emph{larger}
+cells fall $2.5$--$3.2$~dB short ($2.2$--$3.8$~dB on the full recording) while the one-neuron cell reproduces with a \emph{larger}
 prototype advantage than the paper's (\cref{sec:ecg}).  The iterative baseline of Fig.~6 was a second such failure until
 we noticed that we had been grading it with the wrong quantity: a scheme that trains one input at
 a time moves the per-input activations, not the superposition distribution of
 \cref{eq:model-distribution}, and because the prototype block leaves the input register entangled
 with the hidden qubits the two are genuinely different.  In its own observable the baseline
-reaches the paper's $\approx 10^{-3}$ on three seeds of four (\cref{sec:bitcount}); only the unit
+reaches the paper's $\approx 10^{-3}$ on four seeds of six (\cref{sec:bitcount}); only the unit
 of the paper's ``iteration'' is still assumed.  Grade a scheme in the observable it optimises.
 
 \item \textbf{Reading figures is part of reproduction.}  The bit-count target
@@ -57,6 +59,11 @@ term.
 wrong numbers --- a state-preparation gate count off by a factor of two, a sentence with its
 inequality reversed, costs computed by hand.  The fix was a script that emits every number and
 refuses to run if any calibration input lacks a source; the report now quotes only that script.
+\item \textbf{A read-out calibrated on the evaluated set is not a held-out accuracy.}  The Iris
+labels are rounded after one overall scale is fitted; fitted on the test set itself, it let
+three removed test flowers change the predicted labels of most of the rest ($94\,\% \to 39\,\%$ on
+one seed).  Only the 20-seed sweep exposed it; one seed would not have.  Calibrate on the
+training data, and state the pass criterion before running the seeds.
 \end{enumerate}
 
 \paragraph{Not done, and why.}

@@ -15,7 +15,8 @@ Iris: $a_0 = 2$, decay exponent $0.3$, $c_0 = 0.1$, 40 sweeps.  ECG: 40 sweeps p
 ``binary patterns which were assigned to two classes'' (e-mail, 2026-08-21); our
 \code{ambiguous="drop"} does that on both splits after encoding, so the test accuracy under
 it is conditional on the pattern being unambiguous (seed 0: $97.6\,\%$ on the 82 surviving test
-samples against $95.0\,\%$ on all 100); both numbers are reported.  Which split the author
+samples against $95.0\,\%$ on all 100; over 20 seeds $96.4\,\%$ against $94.1\,\%$ with the
+training-set read-out scale); both numbers are reported.  Which split the author
 filtered, and whether before or after the k-means encoding, is not stated.
 \item[Iterative baseline (\cref{sec:bitcount}).]  The paper describes neither the sample-wise
 scheme nor its ``iteration''.  Ours: one \emph{elementary} Kiefer--Wolfowitz step per iteration
@@ -35,7 +36,16 @@ angle in \cite{snn}; $\theta = \pi s$ tested as an ablation.
 merged and their labels averaged; the KL is normalised over all 4\,096 input strings (restricting
 it to the dataset's codes lets the network exploit interference between examples and reach a
 training loss of $10^{-5}$ while reading out at chance); label weight $\propto(\ell+1)^2$ read
-from Fig.~8; labels predicted by nearest rounding of the read-out weight.
+from Fig.~8; labels predicted by nearest rounding of the read-out weight, after one overall
+scale (the class weights $1:4:9$ are known only up to a constant) is fitted by least squares in
+log space.  Fitted on the evaluated set, as in the paper's wording, the scale makes a flower's
+label depend on the other flowers in the set; fitted once on the training set it does not.  Both
+are reported; the second is the one we quote as a held-out accuracy.
+\item[Fig.~9 criterion (\cref{sec:iris}).]  The t-SNE picture is replaced by a firing-based
+coverage and selectivity score ($z$-scores against 1\,000 untrained layers from the
+initialisation) and an angle-based covering score $\rho$; the pass criterion (20 seeds, both
+firing scores positive and above the classic layer's at $p<0.01$, median $\rho\ge 0.5$) was
+fixed before the seeds were run.
 \item[Flappy (\cref{sec:flappy}).]  Our own clone: 288$\times$512 screen, flap impulse $-7$, gap
 120, pipe spacing 180, gravity 1 (the classic constants are unplayable by a memoryless two-feature
 policy); reward 0.01 per frame plus 1 per pipe, tracking term $|{\rm height}-{\rm gap}|$ with
@@ -44,9 +54,9 @@ pipes); decisions cached on a $65\times65$ grid of observations.
 \item[ECG (\cref{sec:ecg}).]  Three signals: a synthetic McSharry-form signal tuned to Fig.~13
 with Gaussian noise $\sigma = 0.02$; MIT-BIH record 100; and the paper's own recording, sent by
 the first author on 21 August 2026 and loaded by \code{-{}-source mailed}, of which we use the
-first $1\,800$ samples --- the Fig.~13 window --- because the full $7\,700$ exceed the compute
-ceiling.  On that recording nothing about the noise is ours: it arrives already noisy and clipped
-to $[0,1]$, with measured $\sigma = 0.035$ and input PSNR $27.0$~dB.  What remains assumed for
+first $1\,800$ samples --- the Fig.~13 window --- with the full $7\,700$ as a check.  On that
+recording nothing about the noise is ours: it arrives already noisy and clipped to $[0,1]$, with
+measured $\sigma = 0.035$ and input PSNR $27.0$~dB ($27.5$~dB over the full recording).  What remains assumed for
 all three signals: mirror-padded edges; first half train, second half test (the paper gives no
 split); 8 optimiser restarts per cell with the best taken by training MSE (the paper gives no
 restart or selection protocol); PSNR with $R = $ range of the clean signal; SSIM both

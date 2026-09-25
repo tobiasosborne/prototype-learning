@@ -2,7 +2,8 @@
 # Copy from  reports/tex/figures/<name>  and upload FLAT, next to main.tex.
 # NEW = not in the current Overleaf project zip; the rest are already there.
 
-fig_bitcount_convergence.png       NEW -- must be uploaded
+fig_bitcount_convergence.png       NEW -- must be uploaded (regenerated 25 Sep 2026, six seeds;
+                                   re-upload if an older copy is already there)
 fig_bitcount_histograms.png        already in the project
 fig_bitcount_noise_aware.png       already in the project
 fig_bitcount_noise_devices.png     already in the project
