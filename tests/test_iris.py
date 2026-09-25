@@ -822,3 +822,32 @@ def test_concurrent_runs_get_distinct_run_dirs(script: ModuleType, tmp_path: Pat
     assert dirs[0].name == f"{stamp}-seed0-merge"
     assert dirs[3].name == f"{stamp}-seed1-drop"
     assert dirs[4].name.startswith(f"{stamp}-seed0-drop-")
+
+
+@pytest.mark.parametrize("hidden", ["prototype", "classic"])
+def test_calibrated_labels_do_not_depend_on_the_evaluated_set(hidden: str) -> None:
+    # The set-refitted read-out (labels_from_values) fits the level scale on the evaluated set, so
+    # a code's label can change when OTHER codes join or leave the set (sweep 20260925, seed 18
+    # "drop": 39 % on 87 filtered samples vs 94 % on all 100).  With the scale fitted once on
+    # the training codes a code's label is a function of that code alone.
+    cfg = iris_train.IrisConfig(n_hidden=2)
+    net = iris_train.network(cfg, hidden)  # type: ignore[arg-type]
+    rng = np.random.default_rng(3)
+    params = rng.uniform(-np.pi, np.pi, net.n_params)
+    split = iris_data.load_split(seed=0)
+    full_u, full = iris_model.calibrated_labels(net, params, split.train_codes, split.test_codes)
+    sub = np.unique(split.test_codes)[::2]
+    sub_u, sub_lab = iris_model.calibrated_labels(net, params, split.train_codes, sub)
+    np.testing.assert_array_equal(sub_lab, full[np.searchsorted(full_u, sub_u)])
+    # calibrated on the evaluated set itself, it IS the per-sample set-refitted read-out
+    u, act = iris_model.basis_activations(net, params, split.train_codes)
+    self_u, self_lab = iris_model.calibrated_labels(
+        net, params, split.train_codes, split.train_codes
+    )
+    np.testing.assert_array_equal(self_u, u)
+    np.testing.assert_array_equal(self_lab, iris_model.labels_from_values(act))
+    acc = iris_model.calibrated_accuracy(
+        net, params, split.train_codes, split.test_codes, split.test_labels
+    )
+    pred = full[np.searchsorted(full_u, split.test_codes)]
+    assert acc == pytest.approx(float(np.mean(pred == split.test_labels)))

@@ -302,6 +302,49 @@ def basis_activations(
     return uniq, out
 
 
+def calibrated_labels(
+    net: Network,
+    params: npt.ArrayLike,
+    calib_codes: Codes,
+    codes: Codes,
+    backend: Backend | None = None,
+) -> tuple[Codes, npt.NDArray[np.int64]]:
+    """``(distinct codes, label)``: per-sample read-out, level scale fitted on ``calib_codes``.
+
+    :func:`labels_from_values` normalises and fits the scale on the *evaluated* set, so a
+    code's label can change when other codes join or leave that set: in the 20-seed sweep
+    (``iris_sweep/20260925T172101Z``) dropping 3 test codes moved the fitted scale of one
+    prototype model by a class step, 94 % → 39 %.  Here the scale ``s`` and the normaliser
+    ``Z = Σ_{x ∈ calib} P(out=1|x)`` are fixed on the training codes and applied to
+    ``P(out=1|x)/Z`` of each evaluated code, so every label is a function of its own code only
+    (an inductive classifier).  ``[ASSUMPTION]`` calibrating on the training set is our choice;
+    ``[PTQNN §III.C]`` says only "applying the regressed values to the nearest class labels".
+    With ``codes = calib_codes`` it equals ``labels_from_values`` of the per-sample read-out.
+    """
+    _, a_cal = basis_activations(net, params, calib_codes, backend)
+    uniq, act = basis_activations(net, params, codes, backend)
+    z = float(a_cal.sum())
+    if z <= 0:
+        return uniq, np.zeros(uniq.size, dtype=np.int64)
+    s = fit_level_scale(a_cal / z)
+    lv = np.log(np.maximum(s * act / z, 1e-15))
+    return uniq, np.abs(lv[:, None] - np.log(LEVELS)[None, :]).argmin(axis=1).astype(np.int64)
+
+
+def calibrated_accuracy(
+    net: Network,
+    params: npt.ArrayLike,
+    calib_codes: Codes,
+    codes: Codes,
+    labels: npt.ArrayLike,
+    backend: Backend | None = None,
+) -> float:
+    """Per-sample accuracy of :func:`calibrated_labels` (scale fitted on ``calib_codes``)."""
+    c = np.asarray(codes, dtype=np.int64)
+    uniq, lab = calibrated_labels(net, params, calib_codes, c, backend)
+    return float(np.mean(lab[np.searchsorted(uniq, c)] == np.asarray(labels, dtype=np.int64)))
+
+
 def predict_labels(
     net: Network, params: npt.ArrayLike, codes: Codes, backend: Backend | None = None
 ) -> npt.NDArray[np.int64]:

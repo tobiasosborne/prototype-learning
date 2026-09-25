@@ -17,6 +17,9 @@ Verdict rules (fixed before the sweep; ``[session-4 analysis]``, stated in
 
 Accuracies are quoted on the policy's test set (``test``) and on every test sample
 (``test_unfiltered``; review 004 M3 — the drop policy filters the test set by its own labels).
+With ``--calibrated`` both are also computed with the level scale fitted once on the training
+codes (``iris.model.calibrated_accuracy``) from the saved parameters: the set-refitted read-out
+of the training script lets a code's label depend on which other codes are evaluated.
 The Fig 7 contrast counts seeds whose final test KL exceeds its running minimum by more than
 ``RISE_REL`` of that minimum (``[PTQNN Fig 7]``: classic test loss rises, prototype does not).
 
@@ -24,6 +27,12 @@ Usage: ``uv run python experiments/iris_sweep_summary.py 'experiments/runs/iris/
 """
 
 from __future__ import annotations
+
+import os
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # before numpy: one BLAS thread per pool worker
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 import argparse
 import glob
@@ -41,6 +50,7 @@ import numpy as np
 from scipy import stats
 
 ROOT = Path(__file__).resolve().parents[1]
+KINDS = ("prototype", "classic")
 MIN_SEEDS = 20
 ALPHA = 0.01
 RHO_MIN = 0.5
@@ -103,8 +113,14 @@ def _policy_summary(runs: list[dict[str, Any]], n_boot: int, boot_seed: int) -> 
             key: _describe([r["results"]["accuracy"][kind][key] for r in runs])
             for key in ("test", "test_unfiltered")
         }
-        for kind in ("prototype", "classic")
+        for kind in KINDS
     }
+    if all("calibrated" in r for r in runs):
+        for kind in KINDS:
+            for key in ("test", "test_unfiltered"):
+                out["accuracy"][kind][f"{key}_calibrated"] = _describe(
+                    [r["calibrated"][kind][key] for r in runs]
+                )
 
     fp = [r["results"]["firing"]["prototype"] for r in runs]
     fc = [r["results"]["firing"]["classic"] for r in runs]
@@ -167,6 +183,33 @@ def _policy_summary(runs: list[dict[str, Any]], n_boot: int, boot_seed: int) -> 
     return out
 
 
+def _calibrated(run_dir: str) -> dict[str, dict[str, float]]:
+    """Both test accuracies with the level scale fitted on the training codes (from params)."""
+    from ptqnn.tasks.iris import data as iris_data
+    from ptqnn.tasks.iris import model as iris_model
+    from ptqnn.tasks.iris import train as iris_train
+
+    meta = json.loads((Path(run_dir) / "meta.json").read_text())
+    sp = meta["split"]
+    split = iris_data.load_split(
+        seed=int(meta["seed"]), train_size=float(sp["train_size"]), ambiguous=sp["ambiguous"]
+    )
+    fields = iris_train.IrisConfig.__dataclass_fields__
+    cfg = iris_train.IrisConfig(**{k: v for k, v in meta["config"].items() if k in fields})
+    out = {}
+    for kind in KINDS:
+        net = iris_train.network(cfg, kind)
+        p = np.load(Path(run_dir) / f"params-{kind}.npy")
+        acc = iris_model.calibrated_accuracy
+        out[kind] = {
+            "test": acc(net, p, split.train_codes, split.test_codes, split.test_labels),
+            "test_unfiltered": acc(
+                net, p, split.train_codes, split.test_codes_all, split.test_labels_all
+            ),
+        }
+    return out
+
+
 def aggregate(
     runs: list[dict[str, Any]], n_boot: int = 10_000, boot_seed: int = 0
 ) -> dict[str, Any]:
@@ -210,6 +253,18 @@ def markdown(summary: dict[str, Any], dirs: list[str], git_hash: str) -> str:
             f"{_fmt(acc['classic']['test'], True)} |",
             f"| test acc. (all samples) % | {_fmt(acc['prototype']['test_unfiltered'], True)} | "
             f"{_fmt(acc['classic']['test_unfiltered'], True)} |",
+            *(
+                [
+                    f"| test acc., train-fitted scale (policy set) % | "
+                    f"{_fmt(acc['prototype']['test_calibrated'], True)} | "
+                    f"{_fmt(acc['classic']['test_calibrated'], True)} |",
+                    f"| test acc., train-fitted scale (all samples) % | "
+                    f"{_fmt(acc['prototype']['test_unfiltered_calibrated'], True)} | "
+                    f"{_fmt(acc['classic']['test_unfiltered_calibrated'], True)} |",
+                ]
+                if "test_calibrated" in acc["prototype"]
+                else []
+            ),
             f"| firing coverage z | {_fmt(f['rho_f']['prototype'])} | "
             f"{_fmt(f['rho_f']['classic'])} |",
             f"| firing selectivity z | {_fmt(f['rho_f_selectivity']['prototype'])} | "
@@ -245,10 +300,20 @@ def main() -> None:
     ap.add_argument("patterns", nargs="+", help="glob(s) of run dirs")
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--calibrated", action="store_true", help="also score with the train-fitted level scale"
+    )
+    ap.add_argument("--processes", type=int, default=32)
     args = ap.parse_args()
     t0 = time.perf_counter()
     dirs = sorted({p for pat in args.patterns for p in glob.glob(pat) if Path(p).is_dir()})
     runs = load_runs([Path(d) for d in dirs])
+    if args.calibrated:
+        from multiprocessing import Pool
+
+        with Pool(min(args.processes, len(runs))) as pool:
+            for r, c in zip(runs, pool.map(_calibrated, [r["dir"] for r in runs]), strict=True):
+                r["calibrated"] = c
     summary = aggregate(runs, n_boot=args.n_boot)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = args.out or ROOT / "experiments" / "runs" / "iris_sweep" / stamp
@@ -263,6 +328,7 @@ def main() -> None:
         "training_git_hash": train_hash,
         "run_dirs": [str(Path(d).resolve().relative_to(ROOT)) for d in dirs],
         "n_boot": args.n_boot,
+        "calibrated": args.calibrated,
         "boot_seed": 0,
         "rules": {"min_seeds": MIN_SEEDS, "alpha": ALPHA, "rho_min": RHO_MIN, "rise_rel": RISE_REL},
         "hostname": socket.gethostname(),

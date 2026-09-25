@@ -79,6 +79,8 @@ def test_prototype_dominance_gives_a_positive_verdict_per_policy(tmp_path: Path)
         _write_run(tmp_path, seed, "merge", proto_wins=True)
         _write_run(tmp_path, seed, "drop", proto_wins=False)
     runs = sw.load_runs(sorted(tmp_path.glob("*-seed*-*")))
+    for r in runs:  # what --calibrated attaches (computed from the saved parameters)
+        r["calibrated"] = {k: {"test": 0.97, "test_unfiltered": 0.95} for k in sw.KINDS}
     summary = sw.aggregate(runs, n_boot=2000, boot_seed=0)
 
     merge, drop = summary["merge"], summary["drop"]
@@ -101,10 +103,19 @@ def test_prototype_dominance_gives_a_positive_verdict_per_policy(tmp_path: Path)
     assert a["test"]["mean"] == pytest.approx(0.96 + 0.001 * 9.5)
     assert a["test_unfiltered"]["mean"] == pytest.approx(0.94)
     assert merge["accuracy"]["classic"]["test_unfiltered"]["min"] == pytest.approx(0.93 - 0.019)
+    assert a["test_calibrated"]["mean"] == pytest.approx(0.97)
+    assert a["test_unfiltered_calibrated"]["mean"] == pytest.approx(0.95)
 
     o = merge["overfitting"]
     assert o["classic"]["seeds_test_kl_rises"] == 20 and o["prototype"]["seeds_test_kl_rises"] == 0
     assert o["classic"]["median_rise"] == pytest.approx(0.03)
+
+
+def test_calibrated_accuracies_are_absent_unless_computed(tmp_path: Path) -> None:
+    for seed in range(3):
+        _write_run(tmp_path, seed, "merge", proto_wins=True)
+    summary = sw.aggregate(sw.load_runs(sorted(tmp_path.glob("*-seed*-*"))), n_boot=100)
+    assert "test_calibrated" not in summary["merge"]["accuracy"]["prototype"]
 
 
 def test_a_duplicate_seed_or_mixed_commit_is_refused(tmp_path: Path) -> None:
