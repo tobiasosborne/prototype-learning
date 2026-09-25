@@ -318,3 +318,13 @@ def test_ecg_provenance_records_host_platform_and_processes() -> None:
         "cpu_count": os.cpu_count(),
         "processes": 6,
     }
+
+
+def test_ecg_script_caps_blas_threads_before_numpy_is_imported() -> None:
+    # Pool workers inherit the BLAS thread pool size fixed at numpy import; set in main() it was
+    # too late and 48 workers x 64 OpenBLAS threads drove the workstation to load 180.
+    lines = _ECG_SCRIPT.read_text().splitlines()
+    numpy_at = next(i for i, s in enumerate(lines) if s.startswith("import numpy"))
+    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        caps = [i for i, s in enumerate(lines) if s.startswith(f'os.environ.setdefault("{var}"')]
+        assert caps and caps[0] < numpy_at, var

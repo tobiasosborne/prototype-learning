@@ -13,10 +13,17 @@ and a Fig-13-style ``fig13.png`` (noisy red, ground truth green, denoised blue) 
 
 from __future__ import annotations
 
+import os
+
+# Before numpy: pool workers inherit the BLAS pool size fixed at import (one thread per worker).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import argparse
 import json
 import multiprocessing as mp
-import os
 import platform
 import socket
 import subprocess
@@ -242,6 +249,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
     mp.set_start_method("fork")
     main()
