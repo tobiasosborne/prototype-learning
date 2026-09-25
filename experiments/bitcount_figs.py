@@ -31,6 +31,8 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import argparse
 import json
 import multiprocessing as mp
+import platform
+import socket
 import subprocess
 import time
 from datetime import UTC, datetime
@@ -47,7 +49,7 @@ from ptqnn.backends import reference as ref
 from ptqnn.circuits import ir
 from ptqnn.circuits.neurons import prototype_neuron
 from ptqnn.tasks import bitcount
-from ptqnn.train import distribution
+from ptqnn.train import distribution, kwsa
 
 N_BITS = 5
 N_HIDDEN = 5  # [PTQNN Fig 5]: 5 hidden prototype neurons, 11 qubits total.
@@ -117,7 +119,13 @@ def plot_fig3(qs0: np.ndarray, qs1: np.ndarray, grid: np.ndarray, out_path: Path
 
 
 def _train_seed(args: tuple[int, int, int, IterativeMonitor, int, int]) -> dict[str, Any]:
-    """Worker: superposition + iterative training for one seed. Runs in its own process."""
+    """Worker: superposition + iterative training for one seed. Runs in its own process.
+
+    Review 004 B2: ``*_loss`` / ``*_params`` are the best point seen (``KWSAResult.loss``; for
+    the iterative scheme the best *monitored* point), ``*_final`` / ``*_final_params`` the last
+    state (``history[-1]``).  The two differ — annealing accepts uphill moves and the
+    one-example iterative objective is non-stationary — so both are carried.
+    """
     seed, iterations, iterative_iterations, monitor, batch, monitor_every = args
     net = bitcount.network(N_BITS, N_HIDDEN)
 
@@ -137,20 +145,87 @@ def _train_seed(args: tuple[int, int, int, IterativeMonitor, int, int]) -> dict[
     return {
         "seed": seed,
         "superposition_loss": float(res_s.loss),
+        "superposition_final": float(res_s.history[-1]),
         "superposition_history": [float(v) for v in res_s.history],
         "superposition_params": res_s.params.tolist(),
+        "superposition_final_params": _final_params(res_s).tolist(),
         "superposition_evaluations": res_s.evaluations,
         "superposition_wall_s": t1 - t0,
         "iterative_monitor": monitor,
         "iterative_batch": batch,
         "iterative_monitor_every": monitor_every,
+        "iterative_iterations": iterative_iterations,
         "iterative_loss": float(res_i.loss),
+        "iterative_final": float(res_i.history[-1]),
         "iterative_history": [float(v) for v in res_i.history],
+        "iterative_params": res_i.params.tolist(),
+        "iterative_final_params": _final_params(res_i).tolist(),
         "iterative_extra_history": {
             key: [float(v) for v in vals] for key, vals in res_i.extra_history.items()
         },
         "iterative_evaluations": res_i.evaluations,
         "iterative_wall_s": t2 - t1,
+    }
+
+
+def _final_params(res: kwsa.KWSAResult) -> np.ndarray:
+    if res.final_params is None:  # pragma: no cover - both trainers always set it
+        raise ValueError("training result carries no final parameters")
+    return res.final_params
+
+
+SCHEMES = ("superposition", "iterative")
+
+
+def final_kl(results: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
+    """``{seed: {scheme: last recorded KL}}`` — the value a run *ends* at (review 004 B2)."""
+    return {str(r["seed"]): {s: r[f"{s}_final"] for s in SCHEMES} for r in results}
+
+
+def best_kl(results: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
+    """``{seed: {scheme: best KL seen}}`` — the minimum over the run, not its end point."""
+    return {str(r["seed"]): {s: r[f"{s}_loss"] for s in SCHEMES} for r in results}
+
+
+def kl_table_lines(results: list[dict[str, Any]]) -> list[str]:
+    """Markdown table of final and best KL per seed and scheme (results.md)."""
+    lines = [
+        "| seed | superposition final KL | superposition best KL "
+        "| iterative final KL | iterative best KL |",
+        "|---|---|---|---|---|",
+    ]
+    for r in results:
+        lines.append(
+            f"| {r['seed']} | {r['superposition_final']:.6f} | {r['superposition_loss']:.6f} "
+            f"| {r['iterative_final']:.6f} | {r['iterative_loss']:.6f} |"
+        )
+    return lines
+
+
+def save_params(out_dir: Path, results: list[dict[str, Any]]) -> list[str]:
+    """Archive the trained parameters per seed and scheme so diagnostics can be recomputed
+    (review 004 M8): ``params-<scheme>-<seed>.npy`` is the final state (the network of
+    ``final_kl``), ``params-<scheme>-best-<seed>.npy`` the best one (of ``best_kl``; for
+    superposition the Fig-5 network).  Returns the file names written."""
+    written: list[str] = []
+    for r in results:
+        for scheme in SCHEMES:
+            for name, key in (
+                (f"params-{scheme}-{r['seed']}.npy", f"{scheme}_final_params"),
+                (f"params-{scheme}-best-{r['seed']}.npy", f"{scheme}_params"),
+            ):
+                np.save(out_dir / name, np.asarray(r[key], dtype=np.float64))
+                written.append(name)
+    return written
+
+
+def provenance(pool_size: int) -> dict[str, Any]:
+    """Which machine produced the run (review 004 M7/B3)."""
+    return {
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+        "pool_size": pool_size,
     }
 
 
@@ -169,7 +244,7 @@ def plot_fig5(best: dict[str, Any], out_path: Path) -> None:
     ax_model.set_ylabel("Probability")
     ax_model.set_title(
         f"Fig 5: trained model P(x | out=1) — seed {best['seed']}, "
-        f"KL={best['superposition_loss']:.4g}"
+        f"best KL={best['superposition_loss']:.4g}"
     )
     ax_target.bar(labels, target, color="#4c72b0", edgecolor="black", linewidth=0.3)
     ax_target.set_ylabel("Probability")
@@ -189,8 +264,13 @@ def plot_fig6(results: list[dict[str, Any]], out_path: Path) -> tuple[np.ndarray
     itr_med, itr_lo, itr_hi = np.median(itr, axis=0), itr.min(axis=0), itr.max(axis=0)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    # history index i ↔ iteration i·monitor_every (the monitor is subsampled for long runs)
-    x_itr = np.arange(itr.shape[1]) * int(results[0].get("iterative_monitor_every", 1))
+    # history index i ↔ iteration i·monitor_every, except the final record, which sits at the
+    # last iteration even off the cadence (review 004 M2)
+    x_itr = bitcount.monitor_x(
+        itr.shape[1],
+        int(results[0]["iterative_monitor_every"]),
+        int(results[0]["iterative_iterations"]),
+    )
     x_sup = np.arange(sup.shape[1])
     ax.fill_between(x_itr, itr_lo, itr_hi, color="red", alpha=0.2, linewidth=0)
     mon = results[0]["iterative_monitor"]
@@ -300,18 +380,19 @@ def main(argv: list[str] | None = None) -> None:
         )
         for seed in args.seeds
     ]
-    with ctx.Pool(processes=max(1, min(len(args.seeds), os.cpu_count() or 1))) as pool:
+    pool_size = max(1, min(len(args.seeds), os.cpu_count() or 1))
+    with ctx.Pool(processes=pool_size) as pool:
         results = pool.map(_train_seed, jobs)
     train_wall = time.perf_counter() - t0
     results.sort(key=lambda r: r["seed"])
+    params_files = save_params(out_dir, results)
 
-    print("[fig5/6] final KL per seed:")
-    print(f"    {'seed':>5}  {'superposition':>14}  {'iterative':>10}")
-    for r in results:
-        print(f"    {r['seed']:>5}  {r['superposition_loss']:>14.6f}  {r['iterative_loss']:>10.6f}")
+    print("[fig5/6] KL per seed (final = last recorded value, best = minimum seen):")
+    for line in kl_table_lines(results):
+        print("    " + line)
 
     best = min(results, key=lambda r: r["superposition_loss"])
-    print(f"[fig5] best seed = {best['seed']} (KL = {best['superposition_loss']:.6f})")
+    print(f"[fig5] best seed = {best['seed']} (best KL = {best['superposition_loss']:.6f})")
     plot_fig5(best, out_dir / "fig05_histograms.png")
 
     sup_med, itr_med = plot_fig6(results, out_dir / "fig06_convergence.png")
@@ -350,6 +431,7 @@ def main(argv: list[str] | None = None) -> None:
         "fig3_grid_n": FIG3_GRID_N,
         "git_hash": git_hash(),
         "backend": ref.StatevectorBackend().name,
+        **provenance(pool_size),
         "wall_times_s": {
             "fig3": fig3_wall,
             "train_pool_total": train_wall,
@@ -363,13 +445,10 @@ def main(argv: list[str] | None = None) -> None:
             },
         },
         "fig3_corner_check": check,
-        "final_kl": {
-            str(r["seed"]): {
-                "superposition": r["superposition_loss"],
-                "iterative": r["iterative_loss"],
-            }
-            for r in results
-        },
+        # review 004 B2: final_kl is the last recorded value (it used to be the minimum)
+        "final_kl": final_kl(results),
+        "best_kl": best_kl(results),
+        "params_files": params_files,
         "best_seed": best["seed"],
         "median_superposition_kl_below_0.005_at_iteration": first_below,
         "timestamp_utc": datetime.now(UTC).isoformat(),
@@ -399,13 +478,13 @@ def main(argv: list[str] | None = None) -> None:
         "",
         "## Fig 5 — bit-count histograms",
         "",
-        "| seed | superposition final KL | iterative final KL |",
-        "|---|---|---|",
+        "Final = last recorded KL; best = minimum seen during the run (for the iterative scheme,",
+        "over the monitored points).  Parameters of both: `params-<scheme>[-best]-<seed>.npy`.",
+        "",
+        *kl_table_lines(results),
     ]
-    for r in results:
-        lines.append(f"| {r['seed']} | {r['superposition_loss']:.6f} | {r['iterative_loss']:.6f} |")
     lines += [
-        f"\nBest seed: **{best['seed']}** (KL = {best['superposition_loss']:.6f}) — histogram "
+        f"\nBest seed: **{best['seed']}** (best KL = {best['superposition_loss']:.6f}) — histogram "
         f"plotted against target `p(x) = (popcount(x)+1)/112`.",
         "",
         "## Fig 6 — convergence",
@@ -430,7 +509,7 @@ def main(argv: list[str] | None = None) -> None:
             "slower than superposition training (matching the paper) but does not converge to "
             "near-zero on this budget. The scheme's design — one elementary KW step on one "
             "coordinate, graded on the per-input activation distribution and annealed once per "
-            "full pass over the basis inputs (`[session-4 analysis]` (a)–(c)) — is "
+            "nominal epoch of 2**n sampled inputs (`[session-4 analysis]` (a)–(c)) — is "
             "itself `[ASSUMPTION]` (`ptqnn/tasks/bitcount.py` docstring, `PLAN.md §0` "
             "'Iterative baseline of Fig 6'); the paper gives no hyperparameters for it.",
             "",

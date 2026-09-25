@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
+import platform
+import socket
+import sys
+import time
+from pathlib import Path
+from types import ModuleType
+
 import numpy as np
 import pytest
 
@@ -266,3 +275,46 @@ def test_table1_ordering_three_prototypes_beat_one() -> None:
     rows = train.table1(n_hidden=(1, 3), kinds=("prototype",), seed=0, iterations=25)
     by_size = {r["n_hidden"]: r for r in rows}
     assert by_size[3]["psnr"] >= by_size[1]["psnr"]
+
+
+# --- experiments/ecg_table1.py provenance (review 004 B3) -----------------------------------
+
+_ECG_SCRIPT = Path(__file__).resolve().parents[1] / "experiments" / "ecg_table1.py"
+
+
+def _load_ecg_script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("ecg_table1", _ECG_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["ecg_table1"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_ecg_cell_seconds_survive_a_wall_clock_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The archived run recorded wall_seconds = -6179: time.time() stepped backwards (WSL2 clock
+    # sync).  Elapsed times must come from a monotonic clock.
+    script = _load_ecg_script()
+    clock = iter([10_000.0, 0.0, -10_000.0])
+    monkeypatch.setattr(time, "time", lambda: next(clock))
+    monkeypatch.setattr(
+        script.train,
+        "run_cell",
+        lambda *a, **k: {"model": "PTQNN", "mse_train": 0.0, "psnr": 0.0},
+    )
+    row = script._cell((None, 1, "prototype", 0, 1, 1, "amplitude"))
+    assert row["seconds"] >= 0
+
+
+def test_ecg_script_has_no_wall_clock_elapsed_times() -> None:
+    assert "time.time()" not in _ECG_SCRIPT.read_text()
+
+
+def test_ecg_provenance_records_host_platform_and_processes() -> None:
+    script = _load_ecg_script()
+    assert script.provenance(processes=6) == {
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+        "processes": 6,
+    }

@@ -201,22 +201,33 @@ def fig_bitcount_histograms() -> None:
 def fig_bitcount_convergence() -> None:
     """Fig 6: superposition training (left, per sweep) and the sample-wise baseline graded in its
     own observable (right, per elementary KW step; the Eq. 4 KL of the same networks dashed)."""
+    # Review 004 M9 / pi-06 item 11: the left panel reads the August six-seed run on purpose.
+    # Its superposition series ({seed: 21 KL values, sweep 0..20}) is what this panel plots, and
+    # the current code reproduces it: train_superposition(seed=0, 20 sweeps) at the pi-06 working
+    # tree matches the archived seed-0 series bit for bit.  The main-report caption must say
+    # "six seeds, August run" for the left panel and "four seeds, September run" for the right.
     h_sup = load(RUNS["bitcount"] / "histories.json")
     h_itr = load(RUNS["bitcount_iterative"] / "histories.json")
-    n_sup = len(h_sup["superposition"])
+    sup_series = np.array(list(h_sup["superposition"].values()), dtype=np.float64)
+    if sup_series.ndim != 2:
+        raise ValueError(f"{RUNS['bitcount']}: superposition histories are not seed x sweep")
+    n_sup = sup_series.shape[0]
     itr = np.array([v for v in h_itr["iterative"].values()])  # (seeds, n_points)
     itr_sup = np.array([v for v in h_itr["iterative_superposition"].values()])
     n_itr = itr.shape[0]
-    total = int(load(RUNS["bitcount_iterative"] / "meta.json").get("iterative_iterations", 100_000))
-    step = total // (itr.shape[1] - 1)
-    x = np.arange(itr.shape[1]) * step
-    x[0] = max(step // 10, 1)  # log axis: the start value sits just left of the first monitor point
+    meta_itr = load(RUNS["bitcount_iterative"] / "meta.json")
+    total = int(meta_itr["iterative_iterations"])
+    every = int(meta_itr.get("iterative_monitor_every", total // (itr.shape[1] - 1)))
+    # the final record sits at the last iteration even off the cadence (review 004 M2)
+    x = bitcount.monitor_x(itr.shape[1], every, total)
+    # log axis: the start value sits just left of the first monitor point
+    x[0] = max(every // 10, 1)
 
     fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.8), sharey=True)
     ax = axes[0]
     for hist in h_sup["superposition"].values():
         ax.plot(hist, color=PROTO, alpha=0.55, lw=1.1)
-    med = np.median(np.array(list(h_sup["superposition"].values())), axis=0)
+    med = np.median(sup_series, axis=0)
     ax.plot(med, color=INK, lw=1.8, label=f"median of {n_sup} seeds")
     ax.set_yscale("log")
     ax.set_xlabel("sweep")
@@ -262,8 +273,8 @@ def fig_bitcount_convergence() -> None:
     fig.text(
         0.5,
         -0.06,
-        f"left: 1 sweep = 108 evaluations, {n_sup} seeds.  right: 1 iteration = 3 evaluations, "
-        f"{n_itr} seeds; KL over the 32 per-input activations",
+        f"left: 1 sweep = 108 evaluations, {n_sup} seeds.  right: 1 iteration = 4 objective "
+        f"evaluations, {n_itr} seeds; KL over the 32 per-input activations",
         ha="center",
         fontsize=7.5,
         color=INK2,

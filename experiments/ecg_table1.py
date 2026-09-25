@@ -17,6 +17,8 @@ import argparse
 import json
 import multiprocessing as mp
 import os
+import platform
+import socket
 import subprocess
 import time
 from dataclasses import asdict
@@ -45,15 +47,27 @@ def git_hash() -> str:
         return "unknown"
 
 
+def provenance(processes: int) -> dict[str, Any]:
+    """Which machine produced the run and with how many worker processes (review 004 B3)."""
+    return {
+        "hostname": socket.gethostname(),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+        "processes": processes,
+    }
+
+
 def _cell(
     args: tuple[train.EcgDataset, int, HiddenKind, int, int, int, model.Encoding],
 ) -> dict[str, Any]:
     ds, k, kind, seed, iterations, subsample, encoding = args
-    t0 = time.time()
+    # elapsed times from the monotonic clock: the wall clock stepped backwards under WSL2 and the
+    # archived run recorded wall_seconds = -6179 (review 004 B3)
+    t0 = time.perf_counter()
     row = train.run_cell(
         ds, k, kind, seed=seed, iterations=iterations, subsample=subsample, encoding=encoding
     )
-    row["seconds"] = time.time() - t0
+    row["seconds"] = time.perf_counter() - t0
     row["seed"] = seed
     print(
         f"  {row['model']:6s} {k} seed {seed}  train MSE {row['mse_train']:.3e}  "
@@ -166,10 +180,11 @@ def main() -> None:
         for k in (1, 2, 3)
         for r in range(args.restarts)
     ]
-    t0 = time.time()
-    with mp.Pool(processes=min(args.processes, len(jobs))) as pool:
+    processes = min(args.processes, len(jobs))
+    t0 = time.perf_counter()
+    with mp.Pool(processes=processes) as pool:
         every = pool.map(_cell, jobs)
-    wall = time.time() - t0
+    wall = time.perf_counter() - t0
     rows = [
         train.best_of([r for r in every if r["kind"] == kind and r["n_hidden"] == k])
         for kind in ("classic", "prototype")
@@ -197,6 +212,8 @@ def main() -> None:
         "train_frac": args.train_frac,
         "encoding": args.encoding,
         "backend": "numpy statevector (batched)",
+        **provenance(processes),
+        "processes_requested": args.processes,
         "wall_seconds": wall,
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")

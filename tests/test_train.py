@@ -209,3 +209,15 @@ def test_kwsa_map_fn_parallel_probes_equivalent() -> None:
     par = kwsa.minimise(f, np.zeros(3), cfg, map_fn=lambda fn, xs: [fn(x) for x in xs])
     np.testing.assert_allclose(serial.params, par.params)
     assert serial.history == par.history
+
+
+@pytest.mark.parametrize("n_coords", [0, -1, -36])
+def test_kwsa_config_rejects_non_positive_n_coords(n_coords: int) -> None:
+    # Review 004 m2: a negative n_coords silently meant "all but some coordinates".
+    with pytest.raises(ValueError, match="n_coords"):
+        kwsa.KWSAConfig(n_coords=n_coords)
+
+
+def test_kwsa_config_accepts_none_and_positive_n_coords() -> None:
+    assert kwsa.KWSAConfig(n_coords=None).n_coords is None
+    assert kwsa.KWSAConfig(n_coords=1).n_coords == 1

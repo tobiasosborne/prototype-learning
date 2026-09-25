@@ -112,7 +112,10 @@ def activation_distribution(net: Network, params: Real, backend: Backend | None 
     ``[session-4 analysis]`` (a): the prototype block ``RX(φ)·CRX·RX(−φ)`` does not restore the
     input register — the un-compute acts on a control the CRX has already entangled — so this is
     *not* ``2^-n · P(inputs = x, out = 1)``.  The sample-wise scheme is graded on this per-input
-    observable.  A dead network (every activation zero) has no distribution; return uniform.
+    observable.  A dead network (every activation zero) has no distribution: return the zero
+    vector, so :func:`perbasis_kl_loss` penalises it through the same ``eps`` floor as
+    :func:`kl_loss` does the superposition route (review 004 M1; returning uniform graded a dead
+    model at KL ≈ 0.065 instead of ≈ 26 on the 5-bit task).
     """
     be = backend or ref.StatevectorBackend()
     act = np.array(
@@ -124,7 +127,7 @@ def activation_distribution(net: Network, params: Real, backend: Backend | None 
     )
     z = act.sum()
     if z <= 0:
-        return np.full(act.size, 1.0 / act.size, dtype=np.float64)
+        return np.zeros(act.size, dtype=np.float64)
     return act / z
 
 
@@ -133,7 +136,8 @@ def perbasis_kl_loss(net: Network, backend: Backend | None = None) -> Loss:
 
     ``[session-4 analysis]`` (a): target ``(popcount(x)+1)/112`` and model
     ``q(x) ∝ P(out=1 | x)`` over the ``2^n`` basis inputs (``activation_distribution``), not the
-    uniform-superposition distribution.  Same KL convention and eps handling as :func:`kl_loss`.
+    uniform-superposition distribution.  Same KL convention and eps handling as :func:`kl_loss`,
+    including for a dead network (zero model vector → floored at ``eps``).
     """
     target = target_distribution(net.n_inputs)
 
@@ -208,16 +212,26 @@ def train_iterative(
     uniform-superposition observable.  Both are recorded: the chosen monitor in ``history`` and
     the other in ``extra_history``.  ``monitor_every`` thins the recording (history index ``i`` ↔
     iteration ``i·monitor_every``) and the final iteration is always recorded, so the last index
-    can sit off the cadence.  (b)/(c): ``ITERATIVE_CONFIG`` restricts the update to one coordinate
-    and to the KW candidate; the schedule index advances once per full pass over the basis inputs
-    (``anneal_every``, default ``2**net.n_inputs``).
+    can sit off the cadence (:func:`monitor_x` gives the iteration of every entry).  (b)/(c):
+    ``ITERATIVE_CONFIG`` restricts the update to one coordinate and to the KW candidate; the
+    schedule index advances once per nominal epoch of ``2**n_inputs`` sampled inputs (with
+    replacement) (``anneal_every``, default ``2**net.n_inputs``).
+
+    Cost: every iteration is a fresh :func:`kwsa.minimise` call, which scores the incumbent on
+    the new sample before the two ``±c`` probes and the KW candidate — four objective
+    evaluations per iteration (review 004 B1).
     """
+    n_basis = 2**net.n_inputs
     if monitor_every < 1:
         raise ValueError("monitor_every must be >= 1")
+    if anneal_every is not None and anneal_every < 1:
+        raise ValueError(f"anneal_every must be None or >= 1, got {anneal_every}")
+    if batch is not None and not 1 <= batch <= n_basis:
+        raise ValueError(f"batch must be None or in [1, {n_basis}], got {batch}")
     rng = np.random.default_rng(seed)
     cfg = config or ITERATIVE_CONFIG
     if anneal_every is None:
-        anneal_every = 2**net.n_inputs
+        anneal_every = n_basis
     monitors: dict[str, Loss] = {
         "perbasis": perbasis_kl_loss(net, backend),
         "superposition": kl_loss(net, backend),
@@ -231,10 +245,9 @@ def train_iterative(
     evaluations = 0
     for n in range(iterations):
         if batch is None:
-            samples = [int(rng.integers(2**net.n_inputs))]
+            samples = [int(rng.integers(n_basis))]
         else:
-            k = min(batch, 2**net.n_inputs)
-            samples = [int(s) for s in rng.choice(2**net.n_inputs, size=k, replace=False)]
+            samples = [int(s) for s in rng.choice(n_basis, size=batch, replace=False)]
         objective = _batch_loss(net, samples, backend, target_scale)
         step_cfg = kwsa.KWSAConfig(
             **{**cfg.__dict__, "iterations": 1, "seed": int(rng.integers(2**31))}
@@ -261,3 +274,24 @@ def train_iterative(
         best_history=best_history,
         extra_history=extra_history,
     )
+
+
+def monitor_x(n_points: int, monitor_every: int, iterations: int) -> npt.NDArray[np.int64]:
+    """Iteration index of every entry of a :func:`train_iterative` history.
+
+    Entry ``i`` is iteration ``i·monitor_every`` except the last, which is always
+    ``iterations`` — when ``iterations % monitor_every != 0`` it sits off the cadence
+    (review 004 M2: 5 iterations every 2 → ``[0, 2, 4, 5]``, not ``[0, 2, 4, 6]``).  Raises if
+    ``n_points`` is not the length that cadence produces.
+    """
+    if monitor_every < 1 or iterations < 0:
+        raise ValueError("monitor_every must be >= 1 and iterations >= 0")
+    on_cadence = list(range(0, iterations + 1, monitor_every))
+    if on_cadence[-1] != iterations:
+        on_cadence.append(iterations)
+    if n_points != len(on_cadence):
+        raise ValueError(
+            f"{n_points} history entries do not match {iterations} iterations monitored every "
+            f"{monitor_every} (expected {len(on_cadence)})"
+        )
+    return np.asarray(on_cadence, dtype=np.int64)

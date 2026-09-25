@@ -61,10 +61,12 @@ class KWSAConfig:
     """[session-4 analysis] (c): coordinate mode visits only the first ``n_coords`` of the random
     permutation per iteration (``None`` = all, the legacy sweep).  For a sample-wise objective a
     one-coordinate visit is the paper's elementary KW step; the full sweep made the Fig-6 red
-    baseline ~36× more expensive than necessary."""
+    baseline ~27× more expensive than necessary (109 against 4 objective evaluations per
+    one-example ``minimise`` call, the incumbent's evaluation included; review 004 B1).  Must be
+    ``None`` or ``>= 1``."""
     probe_candidates: bool = True
     """[session-4 analysis] (b): with ``False`` the ``±c`` probes feed the slope estimate only and
-    the sole candidate is the KW step ``x + a_n ĝ``.  On a one-example objective the greedy
+    the sole candidate is the KW step ``x − a_n ĝ``.  On a one-example objective the greedy
     ``best-of-three`` rule of the default walks the parameter vector at random (KL history
     0.155→0.271→0.093→…→0.344); restricting the candidates fixes the direction.  ``True`` is the
     legacy rule."""
@@ -73,6 +75,11 @@ class KWSAConfig:
     is non-stationary (mini-batches, rotating episode seeds): a stale incumbent corrupts the
     Metropolis comparison — observed as 20/25 → 0/25 perfect Flappy games when training seeds
     were rotated without this flag, and 25/25 with it (``experiments/runs/flappy/batch5``)."""
+
+    def __post_init__(self) -> None:
+        # review 004 m2: a negative n_coords silently meant "all but the last |n| coordinates"
+        if self.n_coords is not None and self.n_coords < 1:
+            raise ValueError(f"n_coords must be None or >= 1, got {self.n_coords}")
 
 
 @dataclass

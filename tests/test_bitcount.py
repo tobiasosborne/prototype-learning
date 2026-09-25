@@ -190,3 +190,47 @@ def test_seed_controls_the_whole_run() -> None:
 def test_dead_network_is_penalised() -> None:
     net = bitcount.network(n_bits=2, n_hidden=1)
     assert bitcount.kl_loss(net)(np.zeros(net.n_params)) > 20
+
+
+def test_dead_perbasis_model_gets_the_epsilon_floor_penalty() -> None:
+    # Review 004 M1: a dead network (every P(out=1 | x) = 0) must be penalised through the same
+    # eps floor as the superposition KL, not graded as the uniform distribution (KL ≈ 0.065).
+    net = bitcount.network(n_bits=2, n_hidden=1)
+    zeros = np.zeros(net.n_params)
+    np.testing.assert_array_equal(bitcount.activation_distribution(net, zeros), np.zeros(4))
+    dead_perbasis = bitcount.perbasis_kl_loss(net)(zeros)
+    assert dead_perbasis > 20
+    assert dead_perbasis == pytest.approx(bitcount.kl_loss(net)(zeros), rel=1e-9)
+
+
+def test_monitor_x_places_the_off_cadence_final_point_at_the_last_iteration() -> None:
+    # Review 004 M2: 5 iterations monitored every 2 record iterations 0, 2, 4 and the final 5.
+    np.testing.assert_array_equal(bitcount.monitor_x(4, 2, 5), [0, 2, 4, 5])
+    np.testing.assert_array_equal(bitcount.monitor_x(101, 1000, 100_000), np.arange(101) * 1000)
+    np.testing.assert_array_equal(bitcount.monitor_x(4, 1, 3), [0, 1, 2, 3])
+    with pytest.raises(ValueError):
+        bitcount.monitor_x(3, 2, 5)  # inconsistent with the cadence of train_iterative
+
+
+def test_monitor_x_matches_the_train_iterative_cadence() -> None:
+    net = bitcount.network(n_bits=2, n_hidden=1)
+    res = bitcount.train_iterative(net, seed=0, iterations=5, monitor_every=2)
+    np.testing.assert_array_equal(bitcount.monitor_x(len(res.history), 2, 5), [0, 2, 4, 5])
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"anneal_every": 0}, "anneal_every"),
+        ({"anneal_every": -3}, "anneal_every"),
+        ({"batch": 0}, "batch"),
+        ({"batch": -1}, "batch"),
+        ({"batch": 5}, "batch"),  # 2**2 = 4 basis inputs
+    ],
+)
+def test_train_iterative_validates_anneal_every_and_batch(
+    kwargs: dict[str, int], match: str
+) -> None:
+    net = bitcount.network(n_bits=2, n_hidden=1)
+    with pytest.raises(ValueError, match=match):
+        bitcount.train_iterative(net, seed=0, iterations=1, **kwargs)  # type: ignore[arg-type]
