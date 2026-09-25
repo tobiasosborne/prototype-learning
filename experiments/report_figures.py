@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "reports/tex/figures"
 RUNS = {
     "bitcount": ROOT / "experiments/runs/bitcount/20260820T135930Z",
-    "bitcount_iterative": ROOT / "experiments/runs/bitcount/20260918T111515Z",
+    "bitcount_iterative": ROOT / "experiments/runs/bitcount/20260925T153548Z",
     "bitcount_noise": ROOT / "experiments/runs/bitcount_noise/20260820T145335Z",
     "bitcount_shots": ROOT / "experiments/runs/bitcount_shots/20260821T084558Z",
     "flappy": ROOT / "experiments/runs/flappy/20260820T143753Z",
@@ -201,16 +201,15 @@ def fig_bitcount_histograms() -> None:
 def fig_bitcount_convergence() -> None:
     """Fig 6: superposition training (left, per sweep) and the sample-wise baseline graded in its
     own observable (right, per elementary KW step; the Eq. 4 KL of the same networks dashed)."""
-    # Review 004 M9 / pi-06 item 11: the left panel reads the August six-seed run on purpose.
-    # Its superposition series ({seed: 21 KL values, sweep 0..20}) is what this panel plots, and
-    # the current code reproduces it: train_superposition(seed=0, 20 sweeps) at the pi-06 working
-    # tree matches the archived seed-0 series bit for bit.  The main-report caption must say
-    # "six seeds, August run" for the left panel and "four seeds, September run" for the right.
-    h_sup = load(RUNS["bitcount"] / "histories.json")
+    # Review 004 M9: both panels read one run (six seeds).  Its superposition series is bit-for-bit
+    # the August run's (RUNS["bitcount"], checked 2026-09-25), so the left panel is unchanged.
+    h_sup = load(RUNS["bitcount_iterative"] / "histories.json")
     h_itr = load(RUNS["bitcount_iterative"] / "histories.json")
     sup_series = np.array(list(h_sup["superposition"].values()), dtype=np.float64)
     if sup_series.ndim != 2:
-        raise ValueError(f"{RUNS['bitcount']}: superposition histories are not seed x sweep")
+        raise ValueError(
+            f"{RUNS['bitcount_iterative']}: superposition histories are not seed x sweep"
+        )
     n_sup = sup_series.shape[0]
     itr = np.array([v for v in h_itr["iterative"].values()])  # (seeds, n_points)
     itr_sup = np.array([v for v in h_itr["iterative_superposition"].values()])
