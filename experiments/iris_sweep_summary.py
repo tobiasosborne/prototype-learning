@@ -131,6 +131,19 @@ def _policy_summary(runs: list[dict[str, Any]], n_boot: int, boot_seed: int) -> 
         firing[key] = {"prototype": _describe(xp), "classic": _describe(xc)}
         p_vals[key] = _wilcoxon_greater(xp, xc)
     firing["wilcoxon_p"] = p_vals
+    # The z-scores compare each layer with ITS OWN untrained null (what training did); the raw
+    # values compare the two layers with each other.  They need not rank alike (review 005 B1:
+    # untrained prototype layers already cover ~0.79, untrained classic ones ~0.39).
+    firing["raw"] = {}
+    for key in ("coverage", "selectivity"):
+        xp, xc = [f[key] for f in fp], [f[key] for f in fc]
+        firing["raw"][key] = {
+            "prototype": _describe(xp),
+            "classic": _describe(xc),
+            "prototype_null_median": float(np.median([f.get(f"{key}_null", np.nan) for f in fp])),
+            "classic_null_median": float(np.median([f.get(f"{key}_null", np.nan) for f in fc])),
+            "prototype_higher": sum(a > b for a, b in zip(xp, xc, strict=True)),
+        }
     firing["prototype_both_positive"] = sum(
         f["rho_f"] > 0 and f["rho_f_selectivity"] > 0 for f in fp
     )
@@ -156,6 +169,7 @@ def _policy_summary(runs: list[dict[str, Any]], n_boot: int, boot_seed: int) -> 
             "median_prototype": med,
             "median_classic": float(np.median(rc)),
             "ci95": list(ci),
+            "ci95_classic": list(_bootstrap_median_ci(rc, n_boot, boot_seed)),
             "wilcoxon_p": p,
             "all_dead_prototype": sum(
                 bool(r["results"]["placement"][f"prototype-{enc}"]["all_dead"]) for r in runs
@@ -208,6 +222,19 @@ def _calibrated(run_dir: str) -> dict[str, dict[str, float]]:
             ),
         }
     return out
+
+
+def resolve_dirs(patterns: list[str]) -> list[str]:
+    """Run dirs matched by the globs; a pattern that matches nothing, or no match at all, raises."""
+    if not patterns:
+        raise ValueError("no run-dir patterns given")
+    dirs: set[str] = set()
+    for pat in patterns:
+        hit = [p for p in glob.glob(pat) if Path(p).is_dir()]
+        if not hit:
+            raise ValueError(f"pattern {pat!r} matches no run directory")
+        dirs.update(hit)
+    return sorted(dirs)
 
 
 def aggregate(
@@ -265,12 +292,27 @@ def markdown(summary: dict[str, Any], dirs: list[str], git_hash: str) -> str:
                 if "test_calibrated" in acc["prototype"]
                 else []
             ),
+            f"| firing coverage (raw; untrained median) | "
+            f"{f['raw']['coverage']['prototype']['median']:.3f} "
+            f"({f['raw']['coverage']['prototype_null_median']:.3f}) | "
+            f"{f['raw']['coverage']['classic']['median']:.3f} "
+            f"({f['raw']['coverage']['classic_null_median']:.3f}) |",
+            f"| firing selectivity (raw; untrained median) | "
+            f"{f['raw']['selectivity']['prototype']['median']:.3f} "
+            f"({f['raw']['selectivity']['prototype_null_median']:.3f}) | "
+            f"{f['raw']['selectivity']['classic']['median']:.3f} "
+            f"({f['raw']['selectivity']['classic_null_median']:.3f}) |",
             f"| firing coverage z | {_fmt(f['rho_f']['prototype'])} | "
             f"{_fmt(f['rho_f']['classic'])} |",
             f"| firing selectivity z | {_fmt(f['rho_f_selectivity']['prototype'])} | "
             f"{_fmt(f['rho_f_selectivity']['classic'])} |",
             f"| seeds whose test KL rises | {s['overfitting']['prototype']['seeds_test_kl_rises']}"
             f" | {s['overfitting']['classic']['seeds_test_kl_rises']} |",
+            "",
+            f"Raw firing: prototype covers more on {f['raw']['coverage']['prototype_higher']}/"
+            f"{s['n_seeds']} seeds, is more selective on "
+            f"{f['raw']['selectivity']['prototype_higher']}/{s['n_seeds']}.  z-scores (below) are "
+            "against each layer's own untrained null, i.e. what training changed.",
             "",
             f"Firing: prototype both z > 0 on {f['prototype_both_positive']}/{s['n_seeds']} "
             f"seeds, beats classic on both on {f['prototype_beats_classic_both']}/{s['n_seeds']}; "
@@ -283,7 +325,8 @@ def markdown(summary: dict[str, Any], dirs: list[str], git_hash: str) -> str:
             lines.append(
                 f"Placement ({enc}): median ρ prototype {p['median_prototype']:+.2f} "
                 f"(95 % CI {p['ci95'][0]:+.2f} … {p['ci95'][1]:+.2f}) vs classic "
-                f"{p['median_classic']:+.2f}; Wilcoxon p {p['wilcoxon_p']:.2g}. "
+                f"{p['median_classic']:+.2f} (CI {p['ci95_classic'][0]:+.2f} … "
+                f"{p['ci95_classic'][1]:+.2f}); Wilcoxon p {p['wilcoxon_p']:.2g}. "
                 f"**Verdict: {'reproduced' if p['verdict'] else 'not reproduced'}.**"
             )
         lines.append("")
@@ -306,7 +349,7 @@ def main() -> None:
     ap.add_argument("--processes", type=int, default=32)
     args = ap.parse_args()
     t0 = time.perf_counter()
-    dirs = sorted({p for pat in args.patterns for p in glob.glob(pat) if Path(p).is_dir()})
+    dirs = resolve_dirs(args.patterns)
     runs = load_runs([Path(d) for d in dirs])
     if args.calibrated:
         from multiprocessing import Pool

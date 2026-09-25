@@ -43,9 +43,24 @@ def _placement(rho_p: float, rho_c: float) -> dict[str, Any]:
 
 
 def _firing(cov_p: float, sel_p: float, cov_c: float, sel_c: float) -> dict[str, Any]:
+    # z-scores as given; raw values chosen to rank the OTHER way on selectivity (as measured in
+    # the 20260925 sweep: z compares each layer with its own untrained null, raw values compare
+    # the layers with each other)
     return {
-        "prototype": {"rho_f": cov_p, "rho_f_selectivity": sel_p, "n_draws": 1000},
-        "classic": {"rho_f": cov_c, "rho_f_selectivity": sel_c, "n_draws": 1000},
+        "prototype": {
+            "rho_f": cov_p,
+            "rho_f_selectivity": sel_p,
+            "coverage": 0.9,
+            "selectivity": 0.15,
+            "n_draws": 1000,
+        },
+        "classic": {
+            "rho_f": cov_c,
+            "rho_f_selectivity": sel_c,
+            "coverage": 0.6,
+            "selectivity": 0.45,
+            "n_draws": 1000,
+        },
     }
 
 
@@ -94,9 +109,15 @@ def test_prototype_dominance_gives_a_positive_verdict_per_policy(tmp_path: Path)
     assert drop["firing"]["verdict"] is False
     assert drop["firing"]["wilcoxon_p"]["rho_f_selectivity"] > 0.5  # one-sided, wrong direction
 
+    raw = f["raw"]
+    assert raw["coverage"]["prototype"]["median"] == pytest.approx(0.9)
+    assert raw["selectivity"]["classic"]["median"] == pytest.approx(0.45)
+    assert raw["coverage"]["prototype_higher"] == 20 and raw["selectivity"]["prototype_higher"] == 0
+
     p = merge["placement"]["inverse"]
     assert p["median_prototype"] == pytest.approx(0.6 + 0.01 * 9.5)
     assert p["ci95"][0] > 0.0 and p["verdict"] is True
+    assert p["ci95_classic"] == pytest.approx([-0.2, -0.2])  # constant classic rho
     assert drop["placement"]["inverse"]["verdict"] is False
 
     a = merge["accuracy"]["prototype"]
@@ -137,3 +158,13 @@ def test_a_run_without_results_is_reported_not_skipped(tmp_path: Path) -> None:
     (d / "results.json").unlink()
     with pytest.raises(FileNotFoundError, match=r"results\.json"):
         sw.load_runs([d])
+
+
+def test_unmatched_or_empty_patterns_are_refused(tmp_path: Path) -> None:
+    _write_run(tmp_path, 0, "merge", proto_wins=True)
+    good = str(tmp_path / "*-seed*-merge")
+    assert sw.resolve_dirs([good]) == [str(p) for p in sorted(tmp_path.glob("*-seed*-merge"))]
+    with pytest.raises(ValueError, match="drpo"):
+        sw.resolve_dirs([good, str(tmp_path / "*-seed*-drpo")])
+    with pytest.raises(ValueError, match="no run"):
+        sw.resolve_dirs([])

@@ -511,7 +511,7 @@ def test_hidden_register_state_is_the_reference_partial_trace(hidden: str, scale
         assert np.trace(fast).real == pytest.approx(1.0, abs=1e-12)
         assert np.linalg.eigvalsh(fast).min() > -1e-12
         np.testing.assert_allclose(
-            fast, _reference_hidden_state(net, params, int(code), False), atol=1e-12
+            fast, _reference_hidden_state(net, params, int(code), False), rtol=0, atol=1e-12
         )
         # the test is not vacuous: the state carries coherences a dephased route would lose
         assert np.abs(fast - np.diag(np.diag(fast))).max() > 1e-2
@@ -519,7 +519,10 @@ def test_hidden_register_state_is_the_reference_partial_trace(hidden: str, scale
         # [PTQNN Fig 4], so on the hidden register it is the Schur-product channel
         # ρ_hk ↦ ρ_hk·⟨o_k|o_h⟩ with |o_h⟩ = RX(a_h)|0⟩, ⟨o_k|o_h⟩ = cos((a_h − a_k)/2).
         np.testing.assert_allclose(
-            fast * kickback, _reference_hidden_state(net, params, int(code), True), atol=1e-12
+            fast * kickback,
+            _reference_hidden_state(net, params, int(code), True),
+            rtol=0,
+            atol=1e-12,
         )
         # distance to the product of the four one-qubit marginals — nonzero means correlations
         t = fast.reshape((2,) * 8)
